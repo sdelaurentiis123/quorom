@@ -49,7 +49,8 @@
   min-height: 46px;
   flex: 1;               /* take remaining vertical space inside the card */
   overflow-y: auto;
-  overscroll-behavior: contain;
+  /* overscroll-behavior: contain removed — it was blocking natural
+     scroll chaining to the margin rail when the log had no overflow. */
   scrollbar-width: thin;
   scrollbar-color: var(--ink-3) transparent;
 }

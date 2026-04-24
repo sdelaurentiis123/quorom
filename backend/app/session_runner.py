@@ -201,7 +201,7 @@ async def _reading(body_text: str, sections: list[dict], bus: SessionBus) -> lis
             "trace": {
                 "t": 0.5,
                 "kind": trace.get("kind", "think"),
-                "text": trace.get("text", "")[:120],
+                "text": trace.get("text", ""),
             },
         })
 
@@ -221,7 +221,7 @@ async def _reading(body_text: str, sections: list[dict], bus: SessionBus) -> lis
             bus.publish({"type": "vector.identified", **vector})
             bus.publish({
                 "type": "chair.trace",
-                "trace": {"t": 0.5, "kind": "flag", "text": f"convene {agent_id}: {angle[:60]}"},
+                "trace": {"t": 0.5, "kind": "flag", "text": f"convene {agent_id}: {angle}"},
             })
             return {"ok": True}
         return {"ok": False, "error": f"unknown tool {name}"}
@@ -288,7 +288,10 @@ async def _deliberation(paper: dict, body_text: str, vectors: list[dict], bus: S
                 bus.publish({
                     "type": "agent.trace",
                     "agent_id": pid,
-                    "trace": {"t": t, "kind": trace.get("kind", "think"), "text": trace.get("text", "")[:120]},
+                    # No text truncation — let the whole snippet flow to the UI.
+                    # Bus backlog is bounded by event count (maxlen=10_000),
+                    # not bytes, so there's no reason to cap per-event size.
+                    "trace": {"t": t, "kind": trace.get("kind", "think"), "text": trace.get("text", "")},
                 })
 
             async def dispatch(name: str, inp: dict, _on_trace) -> dict:
@@ -392,7 +395,7 @@ async def _converging(paper: dict, findings: list[dict], bus: SessionBus) -> dic
             bus.publish({
                 "type": "senior.trace",
                 "senior_id": _sid,
-                "trace": {"t": p, "kind": trace.get("kind", "think"), "text": trace.get("text", "")[:120]},
+                "trace": {"t": p, "kind": trace.get("kind", "think"), "text": trace.get("text", "")},
             })
 
         async def dispatch(name: str, inp: dict, _on_trace) -> dict:
@@ -463,7 +466,7 @@ async def _verdict(paper: dict, findings: list[dict], senior_notes: dict[str, di
             "trace": {
                 "t": 0.5,
                 "kind": trace.get("kind", "think"),
-                "text": trace.get("text", "")[:160],
+                "text": trace.get("text", ""),
             },
         })
 

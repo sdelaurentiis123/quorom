@@ -200,7 +200,7 @@ async def run_agent_loop(
             # flag is a first-class in-loop tool; it does not end the turn.
             if name == "flag":
                 text = inp.get("text", "")
-                await _maybe_await(on_trace({"kind": "flag", "text": text[:72]}))
+                await _maybe_await(on_trace({"kind": "flag", "text": text}))
                 tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": "noted"})
                 continue
 
@@ -314,7 +314,9 @@ async def _stream_once(*, client, model, system, tools, messages, on_trace, max_
                         line, text_buf = text_buf.split("\n", 1)
                         line = line.strip()
                         if line:
-                            await _maybe_await(on_trace({"kind": "think", "text": line[:110]}))
+                            # No truncation on think lines — let the agent's
+                            # full reasoning show in the trace.
+                            await _maybe_await(on_trace({"kind": "think", "text": line}))
                 elif dtype == "input_json_delta":
                     # Partial JSON for the tool input. Buffer; parse on stop.
                     chunk = getattr(delta, "partial_json", "") or ""
@@ -343,11 +345,11 @@ async def _stream_once(*, client, model, system, tools, messages, on_trace, max_
                         # followed by several think lines with the code body.
                         for kind, text in _fmt_tool_traces(name, parsed):
                             if text.strip():
-                                # Allow multi-line text for sandbox_run so the
-                                # frontend can render the full code block with
-                                # a "show more" toggle. Other tool previews are
-                                # single-line so this cap never bites.
-                                await _maybe_await(on_trace({"kind": kind, "text": text[:5000]}))
+                                # No truncation — the full tool call and code
+                                # payload reach the UI. AgentCard's code block
+                                # renders it with a show-more toggle after 3
+                                # lines; the user can expand and see all of it.
+                                await _maybe_await(on_trace({"kind": kind, "text": text}))
                     bb["emitted"] = True
             # message_start, message_delta, message_stop aren't surfaced.
 
@@ -356,7 +358,7 @@ async def _stream_once(*, client, model, system, tools, messages, on_trace, max_
     # Flush any tail text without newline as one last think line.
     tail = text_buf.strip()
     if tail:
-        await _maybe_await(on_trace({"kind": "think", "text": tail[:72]}))
+        await _maybe_await(on_trace({"kind": "think", "text": tail}))
 
     # Log cache behavior so we can see F1 working in real time.
     try:

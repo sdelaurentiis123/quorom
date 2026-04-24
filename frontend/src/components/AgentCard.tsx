@@ -11,7 +11,7 @@ const ICON: Record<string, string> = {
   read: "›",
 };
 
-const CODE_PREVIEW_LINES = 6;
+const CODE_PREVIEW_LINES = 3;
 
 /**
  * A single trace line. When the trace is a tool call whose `text` contains
@@ -82,14 +82,30 @@ export function AgentCard({
   const s = slice ?? { state: "queued" as const, traces: [], progress: 0, finding: null };
   const logRef = useRef<HTMLDivElement>(null);
   const traceCount = s.traces.length;
-  // Autoscroll as new traces stream in. Track total text length too so
-  // growing traces (e.g. the last trace accumulating tokens) also trigger
-  // a scroll-to-bottom — otherwise the last trace can render below the fold.
-  const totalTextLen = s.traces.reduce((a, t) => a + t.text.length, 0);
+
+  // Sticky-bottom autoscroll. The scroll event fires for BOTH user
+  // scrolls AND our programmatic pin; in both cases we just measure
+  // distanceFromBottom and set stickBottom accordingly. If the user
+  // scrolls up, distance grows, stick → false. If they scroll back
+  // down, distance ≤ 4, stick → true. Our programmatic pin lands at
+  // distance 0 so it keeps stick=true.
+  //
+  // We only autoscroll on NEW trace (traceCount) and state change —
+  // NOT on every token delta in the last trace. That's what made the
+  // earlier version fight the user: each token event ran this effect
+  // and pinned even when the user had just wheeled up.
+  const stickBottom = useRef(true);
+  const onLogScroll = () => {
+    const el = logRef.current;
+    if (!el) return;
+    stickBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 4;
+  };
+
   useEffect(() => {
-    if (!logRef.current) return;
-    logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [traceCount, totalTextLen, s.state]);
+    const el = logRef.current;
+    if (!el) return;
+    if (stickBottom.current) el.scrollTop = el.scrollHeight;
+  }, [traceCount, s.state]);
 
   return (
     <article
@@ -111,7 +127,13 @@ export function AgentCard({
 
       <div className="agent-angle j-serif j-dim">{persona.angle}</div>
 
-      <div className="agent-log" role="log" aria-live="polite" ref={logRef}>
+      <div
+        className="agent-log"
+        role="log"
+        aria-live="polite"
+        ref={logRef}
+        onScroll={onLogScroll}
+      >
         {s.traces.length === 0 && s.state === "queued" && (
           <div className="log-queued j-mono j-dim j-tiny">queued…</div>
         )}
