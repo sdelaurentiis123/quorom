@@ -40,7 +40,10 @@ REVIEWER_PARALLEL = int(os.environ.get("QUORUM_REVIEWER_PARALLEL", "5"))
 REVIEWER_MAX_TURNS = 10
 REVIEWER_MAX_TOKENS = 4096
 ORCHESTRATOR_MAX_TOKENS = 2048
-VERDICT_MAX_TOKENS = 3000
+# Verdict composer target: ~2 pages of prose embedded in the `markdown` field
+# of emit_report. 12k gives plenty of headroom for the tool call + prose +
+# any thinking tokens, so we stop hitting the ceiling mid-call.
+VERDICT_MAX_TOKENS = 12000
 SENIOR_MAX_TOKENS = 2048
 
 # Sandbox

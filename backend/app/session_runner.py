@@ -520,14 +520,20 @@ async def _verdict(paper: dict, findings: list[dict], senior_notes: dict[str, di
         dispatch_tool=dispatch,
         commit_tool_name="__never__",
         max_turns=2,
-        max_tokens=config.VERDICT_MAX_TOKENS * 2,  # prose is long
+        max_tokens=config.VERDICT_MAX_TOKENS,
     )
 
     if not collected:
-        log.warning("verdict: composer did not emit_report; using plain fallback")
-        collected["report_markdown"] = _fallback_report_markdown(paper, findings, senior_notes)
-        collected["ranked"] = sorted(findings, key=lambda f: f.get("rank", 99))
-        collected["recommended_experiment"] = _fallback_recommended_experiment(findings)
+        # No silent stub fallback — user called this out in round 5. If the
+        # composer fails to emit_report, surface it as an error event so the
+        # UI shows a toast instead of a misleading placeholder PDF.
+        log.error("verdict: composer did not emit_report — no fallback, erroring out")
+        bus.publish({
+            "type": "error",
+            "where": "verdict",
+            "message": "verdict composer failed to emit a report",
+        })
+        return None
     return collected
 
 
@@ -568,28 +574,5 @@ def _fallback_recommended_experiment(findings: list[dict]) -> dict:
     }
 
 
-def _fallback_report_markdown(paper: dict, findings: list[dict], _senior_notes: dict) -> str:
-    lines = [f"# Executive Summary", ""]
-    lines.append(
-        f"The Quorum panel reviewed *{paper.get('title','the submitted paper')}*. "
-        f"The panel surfaced {len(findings)} material concern(s) spanning methodology, "
-        "statistics, and prior art. The composer was unable to produce a full prose report "
-        "for this session; please consult the per-concern details below."
-    )
-    lines.append("")
-    lines.append("## Principal Concerns")
-    for i, f in enumerate(findings, start=1):
-        lines.append("")
-        lines.append(f"### {i:02d} — {f.get('title','(no title)')}")
-        lines.append("")
-        lines.append(
-            f"Surfaced by {(f.get('id','') or '').split('-')[0]} in §{f.get('section','?')}: "
-            f"{f.get('text','(no detail)')}"
-        )
-    lines.append("")
-    lines.append("## Recommended Next Experiment")
-    lines.append("")
-    lines.append(
-        "See the recommended-experiment card alongside this report for the suggested follow-up."
-    )
-    return "\n".join(lines)
+# _fallback_report_markdown removed in round 5: the composer must succeed.
+# If it doesn't, we surface an error event; no placeholder stub PDF.

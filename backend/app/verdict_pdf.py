@@ -11,18 +11,29 @@ Supported Markdown subset (enough for our composer's output):
   - Paragraph text — blank-line separated
   - Inline `*italic*`, `**bold**`, `§x.y`, `fig.N`, `eq.(N)` get accent highlighting
   - `- item` — bullet list (kept minimal; the prompt discourages bullets)
+
+Unicode: reportlab's default PostScript fonts (Times-Roman, Helvetica)
+don't carry Greek glyphs, so the PDF used to render α/β/γ/τ as black
+tofu rectangles. We register DejaVu Sans — a Unicode-complete TTF
+family vendored under `backend/app/fonts/` — on module import and use
+it throughout.
 """
 from __future__ import annotations
 
 import io
+import logging
 import re
 from datetime import datetime
+from pathlib import Path
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
+from reportlab.lib.fonts import addMapping
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -35,6 +46,54 @@ from reportlab.platypus import (
 )
 
 from .types import PERSONAS
+
+log = logging.getLogger("quorum.verdict_pdf")
+
+
+# ── Unicode font registration ─────────────────────────────────────────
+# DejaVu Sans ships as 4 TTFs under backend/app/fonts/. We register a
+# single family "DejaVu" with Regular / Bold / Italic / BoldItalic
+# variants so reportlab's ParagraphStyle autoresolves bold+italic markup.
+_FONT_DIR = Path(__file__).resolve().parent / "fonts"
+_FONT_FAMILY = "DejaVu"
+_FONT_FALLBACK = False
+
+try:
+    pdfmetrics.registerFont(TTFont("DejaVu", str(_FONT_DIR / "DejaVuSans.ttf")))
+    pdfmetrics.registerFont(TTFont("DejaVu-Bold", str(_FONT_DIR / "DejaVuSans-Bold.ttf")))
+    pdfmetrics.registerFont(TTFont("DejaVu-Italic", str(_FONT_DIR / "DejaVuSans-Oblique.ttf")))
+    pdfmetrics.registerFont(TTFont("DejaVu-BoldItalic", str(_FONT_DIR / "DejaVuSans-BoldOblique.ttf")))
+    # Wire up <b>/<i> markup inside Paragraphs to the right variant files.
+    addMapping("DejaVu", 0, 0, "DejaVu")
+    addMapping("DejaVu", 1, 0, "DejaVu-Bold")
+    addMapping("DejaVu", 0, 1, "DejaVu-Italic")
+    addMapping("DejaVu", 1, 1, "DejaVu-BoldItalic")
+except Exception as e:  # pragma: no cover
+    log.warning("DejaVu font registration failed, falling back to Times-Roman: %s", e)
+    _FONT_FAMILY = "Times-Roman"
+    _FONT_FALLBACK = True
+
+
+def _font(variant: str = "") -> str:
+    """Map 'bold', 'italic', 'bold italic' → the registered font name.
+    Falls back to built-in PostScript Times if DejaVu registration failed
+    at import time."""
+    v = variant.lower()
+    if _FONT_FALLBACK:
+        if "bold" in v and "italic" in v:
+            return "Times-BoldItalic"
+        if "bold" in v:
+            return "Times-Bold"
+        if "italic" in v:
+            return "Times-Italic"
+        return "Times-Roman"
+    if "bold" in v and "italic" in v:
+        return "DejaVu-BoldItalic"
+    if "bold" in v:
+        return "DejaVu-Bold"
+    if "italic" in v:
+        return "DejaVu-Italic"
+    return "DejaVu"
 
 # ── Palette ────────────────────────────────────────────────────────────
 PAPER = colors.HexColor("#F5EFE4")
@@ -51,7 +110,7 @@ def _styles() -> dict:
     return {
         "cover_title": ParagraphStyle(
             "cover_title", parent=base["Title"],
-            fontName="Times-Italic", fontSize=40, leading=46,
+            fontName=_font("italic"), fontSize=40, leading=46,
             textColor=INK, alignment=TA_CENTER, spaceAfter=14,
         ),
         "cover_sub": ParagraphStyle(
@@ -61,7 +120,7 @@ def _styles() -> dict:
         ),
         "cover_paper_title": ParagraphStyle(
             "cover_paper_title", parent=base["Normal"],
-            fontName="Times-Roman", fontSize=18, leading=23,
+            fontName=_font(), fontSize=18, leading=23,
             textColor=INK, alignment=TA_CENTER, spaceAfter=10,
         ),
         "cover_meta": ParagraphStyle(
@@ -71,33 +130,33 @@ def _styles() -> dict:
         ),
         "h1": ParagraphStyle(
             "h1", parent=base["Heading1"],
-            fontName="Times-Italic", fontSize=22, leading=28,
+            fontName=_font("italic"), fontSize=22, leading=28,
             textColor=INK, spaceAfter=10, spaceBefore=18,
         ),
         "h2": ParagraphStyle(
             "h2", parent=base["Heading2"],
-            fontName="Times-Italic", fontSize=16, leading=20,
+            fontName=_font("italic"), fontSize=16, leading=20,
             textColor=INK, spaceAfter=8, spaceBefore=14,
         ),
         "h3": ParagraphStyle(
             "h3", parent=base["Heading3"],
-            fontName="Times-Italic", fontSize=13, leading=17,
+            fontName=_font("italic"), fontSize=13, leading=17,
             textColor=INK, spaceAfter=4, spaceBefore=10,
         ),
         "body": ParagraphStyle(
             "body", parent=base["Normal"],
-            fontName="Times-Roman", fontSize=11, leading=17,
+            fontName=_font(), fontSize=11, leading=17,
             textColor=INK, alignment=TA_JUSTIFY, spaceAfter=10,
             firstLineIndent=0,
         ),
         "body_small": ParagraphStyle(
             "body_small", parent=base["Normal"],
-            fontName="Times-Roman", fontSize=10, leading=14,
+            fontName=_font(), fontSize=10, leading=14,
             textColor=INK2, alignment=TA_LEFT, spaceAfter=4,
         ),
         "bullet": ParagraphStyle(
             "bullet", parent=base["Normal"],
-            fontName="Times-Roman", fontSize=11, leading=16,
+            fontName=_font(), fontSize=11, leading=16,
             textColor=INK, leftIndent=18, bulletIndent=6,
             alignment=TA_LEFT, spaceAfter=4,
         ),
