@@ -1,0 +1,15 @@
+.app {
+  min-height: 100vh;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+}
+
+.grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--rule);
+}

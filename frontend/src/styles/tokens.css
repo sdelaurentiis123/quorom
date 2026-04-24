@@ -1,0 +1,38 @@
+/* Journal design tokens — ported from design_handoff_quorum/journal/j-app.jsx */
+:root {
+  /* Colors */
+  --paper:   #F5EFE4;
+  --paper-2: #EEE6D6;
+  --ink:     #2A241C;
+  --ink-2:   #5B5143;
+  --ink-3:   #8A7E6C;
+  --rule:    #C9BDA5;
+  --accent:  #B4542A;
+
+  /* Reviewer seat colors */
+  --seat-a:  #7A8BA0;  /* pale sky     — METH */
+  --seat-b:  #8A6F8E;  /* faded violet — STAT */
+  --seat-c:  #B07D7A;  /* dusty rose   — THRY */
+  --seat-d:  #A88C52;  /* antique gold — EMPR */
+  --seat-e:  #6E8A6F;  /* sage         — HIST */
+  --seat-f:  #9A6B53;  /* clay         — STLM */
+
+  /* Typography */
+  --serif: "EB Garamond", "Iowan Old Style", Georgia, serif;
+  --mono:  "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Severity — matches prototype SevBadge */
+  --sev-high-bg: var(--accent);
+  --sev-med-bg:  #A88C52;
+  --sev-low-bg:  var(--ink-3);
+
+  /* Error toast border */
+  --danger: #8C2C26;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+}

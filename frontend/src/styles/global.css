@@ -1,0 +1,70 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--serif);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled { cursor: default; }
+
+input, textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* Utility atoms that mirror prototype helpers */
+.j-serif { font-family: var(--serif); }
+.j-mono  { font-family: var(--mono); }
+.j-sc    { text-transform: uppercase; letter-spacing: 0.08em; }
+.j-dim   { color: var(--ink-3); }
+.j-tiny  { font-size: 11px; }
+
+.j-rule   { border: 0; border-top: 1px solid var(--rule); margin: 0; }
+.j-rule-d { border: 0; border-top: 1px dashed var(--rule); margin: 0; }
+
+@keyframes j-blink {
+  50% { opacity: 0; }
+}
+@keyframes j-flicker {
+  0%, 100% { border-color: var(--rule); }
+  50%      { border-color: var(--ink-3); }
+}
+@keyframes j-fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes j-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+.j-caret::after {
+  content: "▍";
+  display: inline-block;
+  margin-left: 2px;
+  animation: j-blink 1s steps(1) infinite;
+  color: var(--ink-2);
+}

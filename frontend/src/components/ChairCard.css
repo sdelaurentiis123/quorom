@@ -1,0 +1,37 @@
+.chair-card {
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-left: 3px solid var(--ink);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.chair-card.chair-live { animation: j-flicker 2.4s ease-in-out infinite; }
+
+.chair-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  justify-content: space-between;
+}
+.chair-id { font-size: 10px; color: var(--ink-2); }
+.chair-name { font-size: 15px; font-style: italic; flex: 1; margin-left: 8px; }
+.chair-angle { font-size: 12px; font-style: italic; margin-top: 2px; }
+.chair-pill {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 1px 6px;
+  border: 1px solid var(--ink-2);
+  color: var(--ink-2);
+}
+.chair-pill-live { border-color: var(--accent); color: var(--accent); }
+
+.chair-log {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--rule);
+  min-height: 80px;
+  max-height: 160px;
+  overflow-y: auto;
+}

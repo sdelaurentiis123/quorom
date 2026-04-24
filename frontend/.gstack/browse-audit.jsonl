@@ -1,0 +1,22 @@
+{"ts":"2026-04-24T17:43:27.156Z","cmd":"screenshot","args":"http://localhost:5173 /tmp/quorum-idle.png","origin":"about:blank","durationMs":50,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:43:39.611Z","cmd":"goto","args":"http://localhost:5173","origin":"http://localhost:5173/","durationMs":224,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:43:39.663Z","cmd":"wait","args":"--load","origin":"http://localhost:5173/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:43:39.803Z","cmd":"screenshot","args":"/tmp/quorum-idle.png","origin":"http://localhost:5173/","durationMs":94,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:43:39.850Z","cmd":"console","args":"--errors","origin":"http://localhost:5173/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:47:28.633Z","cmd":"goto","args":"http://localhost:5173","origin":"http://localhost:5173/","durationMs":155,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:47:30.739Z","cmd":"click","args":"button.linklike","origin":"http://localhost:5173/","durationMs":2056,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:47:38.864Z","cmd":"screenshot","args":"/tmp/quorum-deliberation.png","origin":"http://localhost:5173/","durationMs":69,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:48:14.753Z","cmd":"screenshot","args":"/tmp/quorum-deliberation2.png","origin":"about:blank","durationMs":35,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:48:27.908Z","cmd":"goto","args":"http://localhost:5173","origin":"http://localhost:5173/","durationMs":151,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:48:29.155Z","cmd":"click","args":"button.linklike","origin":"about:blank","durationMs":1192,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:48:55.702Z","cmd":"screenshot","args":"/tmp/quorum-deliberation3.png","origin":"about:blank","durationMs":46,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:49:09.115Z","cmd":"text","args":"","origin":"about:blank","durationMs":2,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:49:17.243Z","cmd":"goto","args":"http://localhost:5173","origin":"http://localhost:5173/","durationMs":237,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:49:17.296Z","cmd":"wait","args":"--load","origin":"http://localhost:5173/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:49:19.397Z","cmd":"click","args":"button.linklike","origin":"http://localhost:5173/","durationMs":2057,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:51:26.445Z","cmd":"goto","args":"http://localhost:5173/","origin":"http://localhost:5173/","durationMs":179,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:51:26.497Z","cmd":"wait","args":"--load","origin":"http://localhost:5173/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:51:26.551Z","cmd":"js","args":"window.fetch('/api/sessions', {method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({source:{kind:'demo',mock:true}})}).then(r=>r.json()).then(d=>window.__sid=d.session_i…","origin":"http://localhost:5173/","durationMs":9,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:51:28.603Z","cmd":"js","args":"console.log('sid', window.__sid)","origin":"http://localhost:5173/","durationMs":1,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:51:43.696Z","cmd":"screenshot","args":"/tmp/quorum-mid.png","origin":"about:blank","durationMs":38,"status":"ok","hasCookies":false,"mode":"launched"}
+{"ts":"2026-04-24T17:52:09.599Z","cmd":"screenshot","args":"/tmp/quorum-verdict.png","origin":"about:blank","durationMs":32,"status":"ok","hasCookies":false,"mode":"launched"}

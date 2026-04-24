@@ -1,0 +1,65 @@
+.paper-body {
+  padding: 20px 28px 60px;
+  overflow-y: auto;
+  height: 100%;
+  border-right: 1px solid var(--rule);
+}
+
+.paper-label { font-size: 10px; }
+.paper-title {
+  font-size: 22px;
+  line-height: 1.2;
+  margin: 4px 0 0 0;
+  font-weight: 400;
+}
+.paper-authors { font-size: 13px; font-style: italic; margin-top: 4px; }
+.paper-id { font-style: normal; font-size: 11px; color: var(--ink-2); }
+
+.paper-rule { margin: 14px 0; }
+
+.paper-section-label { font-size: 10px; margin-top: 18px; margin-bottom: 4px; }
+.paper-p { font-size: 14px; margin: 4px 0 0 0; line-height: 1.55; }
+
+.marked {
+  transition: background 240ms, border-color 240ms;
+}
+.marked-active {
+  background: rgba(180, 84, 42, 0.16);
+  border-bottom: 1.5px solid var(--accent);
+}
+.marked-sup {
+  color: var(--accent);
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+.figure-box {
+  margin: 14px 0;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.figure-hatch {
+  height: 120px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--paper-2),
+    var(--paper-2) 6px,
+    var(--paper) 6px,
+    var(--paper) 12px
+  );
+}
+.figure-caption { padding: 6px 10px; border-top: 1px solid var(--rule); }
+
+.paper-section-index {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  margin-top: 6px;
+}
+.section-index-row { display: contents; }
+.section-id { min-width: 32px; }
+
+.paper-body-text { margin-top: 18px; }
+.paper-block { margin-bottom: 14px; }
+.paper-block-head { font-size: 10px; margin-bottom: 4px; }
+.paper-loading { margin-top: 16px; font-style: italic; }

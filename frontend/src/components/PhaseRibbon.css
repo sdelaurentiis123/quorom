@@ -1,0 +1,26 @@
+.phase-ribbon {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+.ribbon-tab {
+  padding: 10px 14px;
+  font-size: 10px;
+  text-align: center;
+  border-right: 1px solid var(--rule);
+  position: relative;
+  transition: color 160ms, background 160ms;
+}
+.ribbon-tab:last-child { border-right: none; }
+.ribbon-past   { color: var(--ink-2); }
+.ribbon-active { color: var(--ink); background: var(--paper-2); font-weight: 500; }
+.ribbon-active::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+  transition: transform 160ms ease;
+}
+.ribbon-future { color: var(--ink-3); }

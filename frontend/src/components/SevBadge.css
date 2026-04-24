@@ -1,0 +1,12 @@
+.sev-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.sev-high { background: var(--sev-high-bg); color: var(--paper); }
+.sev-med  { background: var(--sev-med-bg);  color: var(--paper); }
+.sev-low  { background: var(--sev-low-bg);  color: var(--paper); }
+.sev-note { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); padding: 0.5px 4.5px; }

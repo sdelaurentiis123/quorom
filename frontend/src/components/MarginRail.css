@@ -1,0 +1,46 @@
+.margin-rail {
+  overflow-y: auto;
+  height: 100%;
+  background: var(--paper);
+}
+.reading-subheading { margin-top: 14px; }
+.rail-intake   { padding: 22px; }
+.rail-reading  { padding: 18px 22px; }
+.rail-cards    { padding: 14px 18px; }
+
+.rail-label { font-size: 10px; }
+.rail-heading {
+  font-size: 15px;
+  font-style: italic;
+  margin: 8px 0 12px;
+  color: var(--ink-2);
+}
+
+.intake-line {
+  font-size: 11px;
+  line-height: 1.7;
+}
+.intake-done { color: var(--ink); }
+.intake-pending { color: var(--ink-3); }
+.intake-tick { margin-right: 8px; }
+
+.reading-list { display: flex; flex-direction: column; gap: 6px; }
+.reading-row {
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--seat, var(--ink));
+  opacity: 0.35;
+  transition: opacity 360ms, background 360ms;
+}
+.reading-row-found {
+  opacity: 1;
+  background: var(--paper);
+  animation: j-fadein 300ms ease-out;
+}
+.reading-id { font-size: 10px; }
+.reading-angle {
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.3;
+  margin-top: 2px;
+}

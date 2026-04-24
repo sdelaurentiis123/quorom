@@ -1,0 +1,23 @@
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 20;
+  pointer-events: none;
+}
+.toast {
+  background: var(--paper);
+  padding: 8px 12px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  animation: j-fadein 200ms ease-out;
+  pointer-events: auto;
+}
+.toast-success { border-color: var(--accent); color: var(--accent); }
+.toast-error   { border-color: var(--danger); color: var(--danger); }
+.toast-neutral { border-color: var(--ink); color: var(--ink); }

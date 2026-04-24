@@ -1,0 +1,465 @@
+"""Top-level coroutine per session. Drives the full 5-phase state machine
+end-to-end with real Anthropic calls and real tools. Phase helpers are
+inlined (eng-review decision #6).
+
+==============================================================================
+                              PHASE FLOW
+
+    intake     ─► ingest (arxiv or pdf) → paper.extracted (incl. body)
+                  sectionize (regex, Haiku fallback)
+
+    reading    ─► orchestrator emits vector.identified* + streams CHAIR traces
+                  STLM force-included at end
+
+    deliberation ─► cache warmup (primes shared paper cache)
+                    asyncio semaphore-gated gather(reviewers)
+                    each reviewer: stream_loop → agent.trace + agent.finding
+                    on_trace logs Anthropic usage (cache_read vs cache_write)
+
+    converging ─► 3 seniors sequentially, each emits senior.trace
+                   senior.signed ONLY fires on actual commit_senior_review
+
+    verdict    ─► rank + compose min_experiment, emits verdict.trace as it
+                   streams; verdict.ready on completion
+==============================================================================
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from typing import Any
+
+from . import config
+from .bus import SessionBus
+from .ingest import arxiv_ingest, sectionize
+from .ingest.arxiv_ingest import IngestError
+from .llm.cache_warmup import warmup_reviewer_cache
+from .llm.client import get_client
+from .llm.prompts import orchestrator as orch_prompt
+from .llm.prompts import reviewer as rev_prompt
+from .llm.prompts import senior as senior_prompt
+from .llm.prompts import verdict as verdict_prompt
+from .llm.stream_loop import default_validate_commit_finding, run_agent_loop
+from .llm.tools_schema import (
+    ORCHESTRATOR_TOOLS,
+    SENIOR_TOOLS,
+    TOOL_SCHEMAS,
+    VERDICT_TOOLS,
+)
+from .sessions import Session
+from .tools.dispatch import execute_tool
+from .types import PERSONAS, PERSONA_IDS, SENIORS
+
+log = logging.getLogger("quorum.session_runner")
+
+
+async def run_session(sess: Session) -> None:
+    """Top-level — called via asyncio.create_task from POST /api/sessions."""
+    bus = sess.bus
+    t0 = time.monotonic()
+
+    def _phase_log(phase: str) -> None:
+        log.info("session %s → phase %s (t+%.1fs)", sess.id, phase, time.monotonic() - t0)
+
+    try:
+        # ───────── INTAKE ─────────
+        _phase_log("intake")
+        bus.publish({"type": "phase.change", "phase": "intake"})
+        source = sess.source or {}
+        try:
+            paper, body_text = await _ingest(source)
+        except IngestError as e:
+            log.warning("ingest failed for %s: %s", sess.id, e)
+            bus.publish({"type": "error", "where": "intake", "message": str(e)})
+            return
+
+        log.info("ingested %s (%d chars body, fmt=%s)", paper.get("id"), len(body_text), paper.get("body_format"))
+        sections = await sectionize.sectionize(body_text)
+        paper["sections"] = sections
+        sess.paper = paper
+        bus.publish({"type": "paper.extracted", "paper": paper})
+
+        # ───────── READING ─────────
+        _phase_log("reading")
+        bus.publish({"type": "phase.change", "phase": "reading"})
+        vectors = await _reading(body_text, sections, bus)
+        sess.vectors = vectors
+
+        # ───────── DELIBERATION ─────────
+        _phase_log("deliberation")
+        bus.publish({"type": "phase.change", "phase": "deliberation"})
+        findings = await _deliberation(paper, body_text, vectors, bus)
+        sess.findings = findings
+
+        # ───────── CONVERGING ─────────
+        _phase_log("converging")
+        bus.publish({"type": "phase.change", "phase": "converging"})
+        senior_notes = await _converging(paper, findings, bus)
+        sess.senior_notes = senior_notes
+
+        # ───────── VERDICT ─────────
+        _phase_log("verdict")
+        bus.publish({"type": "phase.change", "phase": "verdict"})
+        verdict = await _verdict(paper, findings, senior_notes, bus)
+        if verdict is not None:
+            sess.verdict = verdict
+            bus.publish({"type": "verdict.ready", **verdict})
+        log.info("session %s complete (t+%.1fs)", sess.id, time.monotonic() - t0)
+
+    except asyncio.CancelledError:
+        log.info("session %s cancelled", sess.id)
+        bus.publish({"type": "error", "where": "cancelled", "message": "session cancelled"})
+        raise
+    except Exception as e:  # pragma: no cover
+        log.exception("session %s failed", sess.id)
+        bus.publish({"type": "error", "where": "session_runner", "message": str(e)[:200]})
+    finally:
+        bus.close()
+
+
+# ───────────────────────────────────────────────────────────────────────
+# ingest
+# ───────────────────────────────────────────────────────────────────────
+
+async def _ingest(source: dict[str, Any]) -> tuple[dict, str]:
+    kind = source.get("kind")
+    if kind == "arxiv":
+        return await arxiv_ingest.fetch_arxiv(source["id"])
+    if kind == "pdf":
+        from .routes.sessions import get_upload
+        data = get_upload(source["upload_id"])
+        if not data:
+            raise IngestError("upload expired or unknown")
+        from .ingest import pdf_ingest as pdf_mod
+        body, fmt = pdf_mod.extract_markdown(data)
+        paper = {
+            "id": source["upload_id"][:8],
+            "title": _guess_title(body),
+            "authors": "(uploaded PDF)",
+            "venue": "PDF upload",
+            "abstract": (body[:1200].replace("\n", " "))[:800],
+            "sections": [],
+            "body": body[:60_000],
+            "body_format": fmt,
+        }
+        return paper, body
+    if kind == "demo":
+        return await arxiv_ingest.fetch_arxiv("2604.01188")
+    raise IngestError(f"unknown source kind: {kind!r}")
+
+
+def _guess_title(body: str) -> str:
+    for line in body.splitlines():
+        line = line.strip().lstrip("#").strip()
+        if 10 <= len(line) <= 140 and not line.isupper():
+            return line
+    return "(untitled paper)"
+
+
+# ───────────────────────────────────────────────────────────────────────
+# reading — orchestrator picks vectors + streams CHAIR traces
+# ───────────────────────────────────────────────────────────────────────
+
+async def _reading(body_text: str, sections: list[dict], bus: SessionBus) -> list[dict]:
+    client = get_client()
+    sections_preview = sectionize.preview(sections)
+
+    emitted: list[dict] = []
+
+    async def orch_on_trace(trace: dict) -> None:
+        # Orchestrator shows up in the UI as the CHAIR stream.
+        bus.publish({
+            "type": "chair.trace",
+            "trace": {
+                "t": 0.5,
+                "kind": trace.get("kind", "think"),
+                "text": trace.get("text", "")[:120],
+            },
+        })
+
+    async def orch_dispatch(name: str, inp: dict, _on_trace) -> dict:
+        if name == "emit_vector":
+            agent_id = inp.get("agent_id")
+            angle = inp.get("angle", "")
+            if agent_id in PERSONA_IDS and agent_id != "STLM":
+                vector = {"agent_id": agent_id, "angle": angle}
+                if not any(v["agent_id"] == agent_id for v in emitted):
+                    emitted.append(vector)
+                    bus.publish({"type": "vector.identified", **vector})
+                    bus.publish({
+                        "type": "chair.trace",
+                        "trace": {"t": 0.5, "kind": "flag", "text": f"convene {agent_id}: {angle[:60]}"},
+                    })
+            return {"ok": True}
+        return {"ok": False, "error": f"unknown tool {name}"}
+
+    bus.publish({"type": "chair.trace", "trace": {"t": 0.05, "kind": "read", "text": f"reading paper ({len(body_text)} chars, {len(sections)} sections)"}})
+
+    await run_agent_loop(
+        client=client,
+        model=config.MODEL_ORCHESTRATOR,
+        system=orch_prompt.ORCHESTRATOR_SYSTEM,
+        user_msg=orch_prompt.build_orchestrator_user(body_text, sections_preview),
+        tools=ORCHESTRATOR_TOOLS,
+        on_trace=orch_on_trace,
+        dispatch_tool=orch_dispatch,
+        commit_tool_name="__never__",
+        max_turns=3,
+        max_tokens=config.ORCHESTRATOR_MAX_TOKENS,
+    )
+
+    if not any(v["agent_id"] == "STLM" for v in emitted):
+        stlm = next(p for p in PERSONAS if p["id"] == "STLM")
+        vector = {"agent_id": "STLM", "angle": stlm["angle"]}
+        emitted.append(vector)
+        bus.publish({"type": "vector.identified", **vector})
+        bus.publish({
+            "type": "chair.trace",
+            "trace": {"t": 0.95, "kind": "flag", "text": "convene STLM (charitable seat, always included)"},
+        })
+
+    bus.publish({"type": "chair.trace", "trace": {"t": 1.0, "kind": "commit", "text": f"panel convened: {len(emitted)} reviewers"}})
+    return emitted
+
+
+# ───────────────────────────────────────────────────────────────────────
+# deliberation — reviewers semaphore-gated, cache-primed
+# ───────────────────────────────────────────────────────────────────────
+
+async def _deliberation(paper: dict, body_text: str, vectors: list[dict], bus: SessionBus) -> list[dict]:
+    client = get_client()
+
+    # Warmup uses the SAME prefix (preamble + paper) as real reviewer calls so
+    # the cache hash matches. Without this, only the first-firing reviewer
+    # writes the cache; all others race past it and miss.
+    warmup_blocks = rev_prompt.build_warmup_system(body_text)
+    await warmup_reviewer_cache(client, config.MODEL_REVIEWER, warmup_blocks)
+
+    vector_by_id = {v["agent_id"]: v for v in vectors}
+    sem = asyncio.Semaphore(config.REVIEWER_PARALLEL)
+
+    async def run_one(persona: dict) -> dict | None:
+        pid = persona["id"]
+        v = vector_by_id.get(pid)
+        if not v:
+            return None
+
+        async with sem:
+            bus.publish({"type": "agent.start", "agent_id": pid})
+            traces_emitted = 0
+
+            async def on_trace(trace: dict) -> None:
+                nonlocal traces_emitted
+                traces_emitted += 1
+                t = 1 - 0.93 ** traces_emitted
+                bus.publish({
+                    "type": "agent.trace",
+                    "agent_id": pid,
+                    "trace": {"t": t, "kind": trace.get("kind", "think"), "text": trace.get("text", "")[:120]},
+                })
+
+            async def dispatch(name: str, inp: dict, _on_trace) -> dict:
+                return await execute_tool(name, inp, _on_trace)
+
+            system_blocks = rev_prompt.build_reviewer_system(
+                persona=persona,
+                paper_text=body_text,
+                persona_angle_override=v["angle"],
+                vector_angle=v["angle"],
+            )
+
+            try:
+                finding = await run_agent_loop(
+                    client=client,
+                    model=config.MODEL_REVIEWER,
+                    system=system_blocks,
+                    user_msg=rev_prompt.build_reviewer_user(v["angle"], pid),
+                    tools=TOOL_SCHEMAS,
+                    on_trace=on_trace,
+                    dispatch_tool=dispatch,
+                    commit_tool_name="commit_finding",
+                    validate_commit=default_validate_commit_finding,
+                    max_turns=config.REVIEWER_MAX_TURNS,
+                    max_tokens=config.REVIEWER_MAX_TOKENS,
+                )
+            except asyncio.CancelledError:
+                bus.publish({
+                    "type": "agent.finding", "agent_id": pid,
+                    "finding": _placeholder_finding(pid, "cancelled", "Session cancelled."),
+                })
+                raise
+
+            if finding is None:
+                finding = _placeholder_finding(pid, "timeout", "Reviewer exhausted turns without committing.")
+            finding.setdefault("cites", [])
+            finding["id"] = finding.get("id") or f"{pid}-1"
+            if not finding["id"].startswith(pid + "-"):
+                finding["id"] = f"{pid}-1"
+            finding.setdefault("rank", 0)
+
+            bus.publish({"type": "agent.finding", "agent_id": pid, "finding": finding})
+            return finding
+
+    active = [p for p in PERSONAS if p["id"] in vector_by_id]
+    results = await asyncio.gather(*[run_one(p) for p in active], return_exceptions=True)
+    findings = [r for r in results if isinstance(r, dict)]
+    sev_order = {"high": 0, "med": 1, "low": 2, "note": 3}
+    findings.sort(key=lambda f: sev_order.get(f.get("sev", "note"), 9))
+    for i, f in enumerate(findings, start=1):
+        f["rank"] = i
+    log.info("deliberation complete: %d findings (sev dist: %s)",
+             len(findings),
+             {k: sum(1 for f in findings if f.get("sev") == k) for k in ("high", "med", "low", "note")})
+    return findings
+
+
+def _placeholder_finding(pid: str, reason: str, text: str) -> dict:
+    return {
+        "id": f"{pid}-{reason}",
+        "sev": "note",
+        "rank": 99,
+        "title": f"{reason} ({pid})",
+        "text": text,
+        "section": "—",
+        "cites": [],
+    }
+
+
+# ───────────────────────────────────────────────────────────────────────
+# converging — 3 seniors sequentially, each streams traces
+# senior.signed ONLY fires on real commit_senior_review (fixes prior lie)
+# ───────────────────────────────────────────────────────────────────────
+
+async def _converging(paper: dict, findings: list[dict], bus: SessionBus) -> dict[str, dict]:
+    client = get_client()
+    notes: dict[str, dict] = {}
+
+    for senior in SENIORS:
+        sid = senior["id"]
+        bus.publish({"type": "senior.start", "senior_id": sid})
+        bus.publish({"type": "senior.progress", "senior_id": sid, "p": 0.05})
+
+        committed = False
+        trace_count = 0
+
+        async def on_trace(trace: dict, _sid=sid) -> None:
+            nonlocal trace_count
+            trace_count += 1
+            # Bump visible progress off the raw token stream; cap at 0.9 until commit.
+            p = min(0.9, 0.1 + trace_count * 0.08)
+            bus.publish({"type": "senior.progress", "senior_id": _sid, "p": p})
+            bus.publish({
+                "type": "senior.trace",
+                "senior_id": _sid,
+                "trace": {"t": p, "kind": trace.get("kind", "think"), "text": trace.get("text", "")[:120]},
+            })
+
+        async def dispatch(name: str, inp: dict, _on_trace) -> dict:
+            return await execute_tool(name, inp, _on_trace)
+
+        def validate_senior(inp: dict) -> str | None:
+            if "notes" not in inp:
+                return "notes required"
+            return None
+
+        result = None
+        try:
+            result = await run_agent_loop(
+                client=client,
+                model=config.MODEL_SENIOR,
+                system=senior_prompt.SENIOR_SYSTEMS[sid],
+                user_msg=senior_prompt.build_senior_user(paper["title"], findings),
+                tools=SENIOR_TOOLS,
+                on_trace=on_trace,
+                dispatch_tool=dispatch,
+                commit_tool_name="commit_senior_review",
+                validate_commit=validate_senior,
+                max_turns=5,
+                max_tokens=config.SENIOR_MAX_TOKENS,
+            )
+            if result is not None:
+                committed = True
+        except asyncio.CancelledError:
+            bus.publish({"type": "senior.trace", "senior_id": sid, "trace": {"t": 1.0, "kind": "flag", "text": "cancelled"}})
+            raise
+        except Exception as e:
+            log.warning("senior %s failed: %s", sid, e)
+            bus.publish({"type": "senior.trace", "senior_id": sid, "trace": {"t": 1.0, "kind": "flag", "text": f"failed: {str(e)[:72]}"}})
+
+        if committed:
+            bus.publish({"type": "senior.progress", "senior_id": sid, "p": 1.0})
+            bus.publish({"type": "senior.signed", "senior_id": sid})
+        else:
+            # Honest: did NOT sign. UI renders this as an inconclusive state.
+            bus.publish({"type": "senior.progress", "senior_id": sid, "p": 1.0})
+            bus.publish({"type": "senior.inconclusive", "senior_id": sid})
+
+        notes[sid] = result or {"notes": "(senior review unavailable)"}
+
+    return notes
+
+
+# ───────────────────────────────────────────────────────────────────────
+# verdict — compose ranked + min_experiment, streams traces
+# ───────────────────────────────────────────────────────────────────────
+
+async def _verdict(paper: dict, findings: list[dict], senior_notes: dict[str, dict], bus: SessionBus) -> dict | None:
+    client = get_client()
+    collected: dict[str, Any] = {}
+
+    async def on_trace(trace: dict) -> None:
+        bus.publish({
+            "type": "verdict.trace",
+            "trace": {"t": 0.5, "kind": trace.get("kind", "think"), "text": trace.get("text", "")[:120]},
+        })
+
+    async def dispatch(name: str, inp: dict, _on_trace) -> dict:
+        if name == "emit_verdict":
+            collected["ranked"] = inp.get("ranked") or findings
+            collected["min_experiment"] = inp.get("min_experiment") or _fallback_min_experiment(findings)
+            return {"ok": True}
+        return {"ok": False, "error": f"unknown {name}"}
+
+    bus.publish({"type": "verdict.trace", "trace": {"t": 0.02, "kind": "read", "text": f"ranking {len(findings)} findings"}})
+
+    await run_agent_loop(
+        client=client,
+        model=config.MODEL_VERDICT,
+        system=verdict_prompt.VERDICT_SYSTEM,
+        user_msg=verdict_prompt.build_verdict_user(paper["title"], findings, senior_notes),
+        tools=VERDICT_TOOLS,
+        on_trace=on_trace,
+        dispatch_tool=dispatch,
+        commit_tool_name="__never__",
+        max_turns=2,
+        max_tokens=config.VERDICT_MAX_TOKENS,
+    )
+
+    if not collected:
+        log.warning("verdict: model did not emit_verdict; using fallback")
+        collected["ranked"] = sorted(findings, key=lambda f: f.get("rank", 99))
+        collected["min_experiment"] = _fallback_min_experiment(findings)
+    return collected
+
+
+def _fallback_min_experiment(findings: list[dict]) -> dict:
+    top = findings[0] if findings else None
+    if top:
+        return {
+            "title": f"Resolve {top.get('id', '?')}: {top.get('title', '')}",
+            "resolves": [top.get("id", "")],
+            "cost": {"gpu_hours": 24.0, "gpu_type": "A100-80G", "eval_sweeps": 1},
+            "yaml": (
+                "experiment:\n"
+                f"  name: resolve_{top.get('id','top').lower().replace('-', '_')}\n"
+                f"  objective: {top.get('title','')}\n"
+                f"  resolves: [{top.get('id','?')}]\n"
+            ),
+        }
+    return {
+        "title": "No critical concerns — re-review after revision",
+        "resolves": [],
+        "cost": {"gpu_hours": 0, "gpu_type": "—", "eval_sweeps": 0},
+        "yaml": "experiment: null\n",
+    }

@@ -1,0 +1,11 @@
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 32px;
+  border-bottom: 2px solid var(--ink);
+}
+.masthead-left  { display: flex; align-items: baseline; gap: 12px; }
+.masthead-title { font-size: 28px; font-style: italic; letter-spacing: -0.01em; }
+.masthead-sub   { font-size: 10px; }
+.masthead-right { font-size: 10px; }

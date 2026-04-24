@@ -1,0 +1,53 @@
+.senior-live {
+  border: 1.5px solid var(--rule);
+  border-left: 3px solid var(--ink);
+  background: var(--paper);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.senior-live-thinking { animation: j-flicker 2.4s ease-in-out infinite; }
+.senior-live-done { border-left-color: var(--accent); }
+.senior-live-inconc { border-left-color: var(--ink-3); }
+
+.senior-live-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+.senior-live-id { font-size: 10px; color: var(--ink-2); margin-right: 6px; }
+.senior-live-name { font-size: 14px; font-style: italic; }
+.senior-live-angle { font-size: 12px; font-style: italic; margin-top: 2px; }
+
+.senior-live-pill {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 1px 6px;
+  border: 1px solid var(--ink-2);
+  color: var(--ink-2);
+}
+.pill-signed { color: var(--accent); border-color: var(--accent); }
+.pill-inconclusive { color: var(--ink-3); border-color: var(--ink-3); }
+.pill-reviewing { color: var(--ink); border-color: var(--ink); }
+
+.senior-live-progress {
+  height: 4px;
+  margin-top: 10px;
+  background: var(--rule);
+}
+.senior-live-progress-fill {
+  height: 100%;
+  background: var(--ink);
+  transition: width 180ms linear;
+}
+
+.senior-live-log {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--rule);
+  min-height: 54px;
+  max-height: 140px;
+  overflow-y: auto;
+}

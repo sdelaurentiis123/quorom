@@ -1,0 +1,76 @@
+.agent-card {
+  background: var(--paper);
+  border: 1.5px solid var(--rule);
+  border-left: 3px solid var(--seat, var(--ink));
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color 160ms;
+}
+.agent-card:hover { border-color: var(--ink-2); }
+.agent-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.agent-card.thinking {
+  animation: j-flicker 2.4s ease-in-out infinite;
+}
+
+.agent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.agent-id { font-size: 10px; color: var(--ink-2); }
+.agent-name { font-style: italic; margin-left: 8px; font-size: 15px; }
+.agent-angle { font-size: 12px; font-style: italic; margin-top: 2px; }
+
+.pill {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 1px 6px;
+  border: 1px solid var(--ink-2);
+  color: var(--ink-2);
+}
+.pill-done { color: var(--accent); border-color: var(--accent); }
+.pill-reading { color: var(--ink); border-color: var(--ink); }
+
+.agent-log {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--rule);
+  min-height: 46px;
+}
+.log-queued { font-style: italic; }
+
+.log-line {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  animation: j-fadein 180ms ease-out;
+  display: flex;
+  gap: 6px;
+}
+.log-line.log-live { color: var(--ink); }
+.log-icon { flex-shrink: 0; }
+.log-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-finding {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.agent-finding-text {
+  font-size: 12px;
+  line-height: 1.4;
+  flex: 1;
+}

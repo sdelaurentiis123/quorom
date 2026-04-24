@@ -1,0 +1,41 @@
+.converging-bar {
+  border-top: 2px solid var(--ink);
+  background: var(--paper-2);
+  padding: 12px 28px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.senior-card {
+  border: 1.5px solid var(--rule);
+  background: var(--paper);
+  padding: 10px 12px;
+}
+.senior-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.senior-id { font-size: 10px; }
+.senior-pill {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 1px 6px;
+  border: 1px solid var(--ink-2);
+  color: var(--ink-2);
+}
+.senior-pill-done { color: var(--accent); border-color: var(--accent); }
+.senior-name { font-size: 15px; font-style: italic; margin-top: 4px; }
+.senior-angle { font-size: 12px; font-style: italic; margin-top: 2px; }
+.senior-progress {
+  height: 4px;
+  margin-top: 10px;
+  background: var(--rule);
+}
+.senior-progress-fill {
+  height: 100%;
+  background: var(--ink);
+  transition: width 160ms linear;
+}
