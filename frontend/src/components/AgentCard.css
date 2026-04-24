@@ -6,9 +6,9 @@
   margin-bottom: 10px;
   cursor: pointer;
   transition: border-color 160ms;
-  /* Cap total card height so long traces + long findings don't push the rail
-     into a scrollable wall. Inner sections handle their own overflow. */
-  max-height: 420px;
+  /* More breathing room so the log + finding both fit without feeling
+     squeezed. Inner sections still handle their own overflow. */
+  max-height: 640px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -87,18 +87,20 @@
   align-items: baseline;
 }
 .log-code {
-  margin: 2px 0 0 14px;
+  margin: 2px 0 4px 14px;
   padding: 6px 8px;
   font-family: var(--mono);
   font-size: 10.5px;
-  line-height: 1.45;
+  line-height: 1.5;
   background: var(--paper-2);
   border-left: 2px solid var(--rule);
   color: var(--ink);
-  white-space: pre;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--ink-3) transparent;
+  /* pre-wrap so long lines wrap inside the card instead of getting pushed
+     off-screen horizontally (user can't see what's cut off). Preserves
+     leading whitespace / indentation. */
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 .log-expand {
   align-self: flex-start;
@@ -120,7 +122,7 @@
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  max-height: 140px;
+  max-height: 260px;
   overflow-y: auto;
   flex-shrink: 0;
   scrollbar-width: thin;
@@ -128,6 +130,9 @@
 }
 .agent-finding-text {
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
   flex: 1;
+  /* Long finding text wraps inside the footer instead of getting clipped. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }

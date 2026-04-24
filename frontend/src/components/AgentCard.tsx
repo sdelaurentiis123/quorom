@@ -82,11 +82,14 @@ export function AgentCard({
   const s = slice ?? { state: "queued" as const, traces: [], progress: 0, finding: null };
   const logRef = useRef<HTMLDivElement>(null);
   const traceCount = s.traces.length;
-  // Autoscroll as new traces stream in.
+  // Autoscroll as new traces stream in. Track total text length too so
+  // growing traces (e.g. the last trace accumulating tokens) also trigger
+  // a scroll-to-bottom — otherwise the last trace can render below the fold.
+  const totalTextLen = s.traces.reduce((a, t) => a + t.text.length, 0);
   useEffect(() => {
     if (!logRef.current) return;
     logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [traceCount, s.state]);
+  }, [traceCount, totalTextLen, s.state]);
 
   return (
     <article
