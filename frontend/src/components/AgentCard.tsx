@@ -1,4 +1,5 @@
-import type { AgentSlice, Persona } from "../types";
+import { useEffect, useRef, useState } from "react";
+import type { AgentSlice, Persona, TraceEvent } from "../types";
 import { SevBadge } from "./SevBadge";
 import "./AgentCard.css";
 
@@ -10,7 +11,64 @@ const ICON: Record<string, string> = {
   read: "›",
 };
 
-import { useEffect, useRef } from "react";
+const CODE_PREVIEW_LINES = 6;
+
+/**
+ * A single trace line. When the trace is a tool call whose `text` contains
+ * embedded newlines, we render it as a compact code block with a "show more"
+ * toggle — 6 lines visible by default, click to expand to the full snippet.
+ */
+function TraceLine({
+  trace,
+  live,
+  stopCaret,
+}: {
+  trace: TraceEvent;
+  live: boolean;
+  stopCaret: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const icon = ICON[trace.kind] ?? "›";
+  const hasNewline = trace.text.includes("\n");
+
+  // Tool traces with embedded newlines: render as header + code block.
+  if (hasNewline && trace.kind === "tool") {
+    const [header, ...codeLines] = trace.text.split("\n");
+    const total = codeLines.length;
+    const overflow = total > CODE_PREVIEW_LINES;
+    const visible = expanded || !overflow ? codeLines : codeLines.slice(0, CODE_PREVIEW_LINES);
+    return (
+      <div className={`log-line log-line-block j-mono ${live ? "log-live" : ""}`}>
+        <div className="log-line-row">
+          <span className="log-icon j-dim">{icon}</span>
+          <span className="log-text">{header}</span>
+          {live && !stopCaret && <span className="j-caret" />}
+        </div>
+        <pre className="log-code">{visible.join("\n")}</pre>
+        {overflow && (
+          <button
+            type="button"
+            className="log-expand j-mono j-sc j-dim"
+            onClick={(e) => { e.stopPropagation(); setExpanded((x) => !x); }}
+          >
+            {expanded
+              ? `hide (${total - CODE_PREVIEW_LINES} line${total - CODE_PREVIEW_LINES === 1 ? "" : "s"})`
+              : `show ${total - CODE_PREVIEW_LINES} more line${total - CODE_PREVIEW_LINES === 1 ? "" : "s"} ↓`}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Single-line trace.
+  return (
+    <div className={`log-line j-mono ${live ? "log-live" : ""}`}>
+      <span className="log-icon j-dim">{icon}</span>
+      <span className="log-text">{trace.text}</span>
+      {live && !stopCaret && <span className="j-caret" />}
+    </div>
+  );
+}
 
 export function AgentCard({
   persona,
@@ -57,14 +115,12 @@ export function AgentCard({
         {s.traces.map((t, i) => {
           const isLast = i === s.traces.length - 1;
           return (
-            <div
+            <TraceLine
               key={`${t.t}-${i}`}
-              className={`log-line j-mono ${isLast && s.state === "reading" ? "log-live" : ""}`}
-            >
-              <span className="log-icon j-dim">{ICON[t.kind] ?? "›"}</span>
-              <span className="log-text">{t.text}</span>
-              {isLast && s.state === "reading" && <span className="j-caret" />}
-            </div>
+              trace={t}
+              live={isLast && s.state === "reading"}
+              stopCaret={false}
+            />
           );
         })}
       </div>

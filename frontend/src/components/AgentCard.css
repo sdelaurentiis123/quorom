@@ -74,6 +74,45 @@
   word-break: break-word;
 }
 
+/* Multi-line tool block (e.g. sandbox.run with embedded code). */
+.log-line-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 0;
+}
+.log-line-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.log-code {
+  margin: 2px 0 0 14px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.45;
+  background: var(--paper-2);
+  border-left: 2px solid var(--rule);
+  color: var(--ink);
+  white-space: pre;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-3) transparent;
+}
+.log-expand {
+  align-self: flex-start;
+  margin: 2px 0 0 14px;
+  padding: 2px 4px;
+  font-size: 9px;
+  background: transparent;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+  color: var(--ink-3);
+}
+.log-expand:hover { color: var(--ink); }
+
 .agent-finding {
   margin-top: 8px;
   padding-top: 6px;

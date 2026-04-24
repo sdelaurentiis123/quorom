@@ -49,51 +49,79 @@ _DOTTED = {
 }
 
 
-def _fmt_tool_call(name: str, inp: dict) -> str:
-    """Format `tool.name(args)` for a trace line. Special-cased for sandbox_run
-    and arxiv_search so the user sees the actual code/query, not empty parens."""
+def _fmt_tool_traces(name: str, inp: dict) -> list[tuple[str, str]]:
+    """Return a list of (kind, text) pairs to emit for one tool call.
+
+    Two things this solves vs. the earlier single-string formatter:
+      1. No leading "$ " — the UI's ICON map prepends "$" for kind="tool",
+         so returning "$ sandbox.run" used to render as "$ $ sandbox.run".
+      2. For sandbox_run we show multiple lines of the actual code (skipping
+         leading imports / comments, which are always `import numpy as np`
+         and equivalent). Subsequent code lines emit as kind="think" so the
+         icon column alternates `$` → `›` → `›` and reads as
+            $ sandbox.run  (12 lines)
+            ›   data = np.array(...)
+            ›   ci = bootstrap(data, B=10000)
+            ›   print(ci)
+         which is the minimum context a reader needs to know WHAT the agent
+         is actually computing.
+    """
     dotted = _DOTTED.get(name, name)
 
     if name == "sandbox_run":
         code = (inp.get("code") or "").strip()
         if not code:
-            return f"$ {dotted}(…)"
-        # First non-trivial line of code is the most informative preview.
-        first = next((ln.strip() for ln in code.splitlines() if ln.strip()), "")
-        first = first[:110]
-        return f"$ {dotted}\n  {first}"
+            return [("tool", f"{dotted}()")]
+        # Send the tool call and its full code as ONE trace with a newline
+        # between the header and the code. The frontend sees embedded newlines
+        # in a "tool" trace and renders it as a collapsible code block
+        # (first 6 lines visible, "show more" expands the rest).
+        lines = [l.rstrip() for l in code.splitlines() if l.rstrip().strip()]
+        total = len(lines)
+        header = f"{dotted}  ({total} line{'' if total == 1 else 's'})"
+        body = "\n".join(lines)
+        return [("tool", f"{header}\n{body}")]
 
     if name == "arxiv_search":
         q = inp.get("query", "")
         k = inp.get("k")
-        preview = f"{json.dumps(q)}" if isinstance(q, str) else str(q)
-        if k:
-            return f"$ {dotted}({preview}, k={k})"
-        return f"$ {dotted}({preview})"
+        preview = json.dumps(q) if isinstance(q, str) else str(q)
+        suffix = f", k={k}" if k else ""
+        return [("tool", f"{dotted}({preview}{suffix})")]
 
     if name == "arxiv_read":
-        return f"$ {dotted}({inp.get('arxiv_id','')!r})"
+        return [("tool", f"{dotted}({inp.get('arxiv_id','')!r})")]
 
     if name == "s2_neighbors":
-        return f"$ {dotted}({inp.get('arxiv_id','')!r}, direction={inp.get('direction','cited_by')!r})"
+        direction = inp.get("direction", "cited_by")
+        return [("tool", f"{dotted}({inp.get('arxiv_id','')!r}, direction={direction!r})")]
 
     if name == "bootstrap":
         data = inp.get("data", [])
-        return f"$ {dotted}(data=[{len(data)}], B={inp.get('B', 2000)})"
+        return [("tool", f"{dotted}(data=[{len(data)}], B={inp.get('B', 2000)})")]
 
     if name == "power_calc":
-        return f"$ {dotted}(δ={inp.get('delta','?')}, α={inp.get('alpha',0.05)}, β={inp.get('beta',0.20)})"
+        return [(
+            "tool",
+            f"{dotted}(δ={inp.get('delta','?')}, α={inp.get('alpha',0.05)}, β={inp.get('beta',0.20)})",
+        )]
 
     if name == "sympy_simplify":
         expr = inp.get("expr", "")
-        preview = expr if len(expr) <= 54 else expr[:51] + "…"
-        return f"$ {dotted}({preview!r})"
+        preview = expr if len(expr) <= 68 else expr[:65] + "…"
+        return [("tool", f"{dotted}({preview!r})")]
 
     # Fallback: first 2 args as key=value.
     preview = ", ".join(f"{k}={_short(v)}" for k, v in list(inp.items())[:2])
     if len(preview) > 80:
         preview = preview[:77] + "…"
-    return f"$ {dotted}({preview})"
+    return [("tool", f"{dotted}({preview})")]
+
+
+def _fmt_tool_call(name: str, inp: dict) -> str:
+    """Back-compat single-line formatter (used in tests)."""
+    traces = _fmt_tool_traces(name, inp)
+    return "\n".join(text for _, text in traces)
 
 
 def _short(v: Any) -> str:
@@ -310,12 +338,16 @@ async def _stream_once(*, client, model, system, tools, messages, on_trace, max_
                             parsed = json.loads(bb["input_buf"]) if bb["input_buf"].strip() else {}
                         except json.JSONDecodeError:
                             parsed = {}
-                        # Emit a single, meaningful trace line per tool call.
-                        text = _fmt_tool_call(name, parsed)
-                        # Split on \n so the log renders code on its own line(s).
-                        for piece in text.split("\n"):
-                            if piece.strip():
-                                await _maybe_await(on_trace({"kind": "tool", "text": piece[:140]}))
+                        # Emit one or more traces with appropriate kinds — e.g.
+                        # sandbox_run produces one tool line ("sandbox.run (12 lines)")
+                        # followed by several think lines with the code body.
+                        for kind, text in _fmt_tool_traces(name, parsed):
+                            if text.strip():
+                                # Allow multi-line text for sandbox_run so the
+                                # frontend can render the full code block with
+                                # a "show more" toggle. Other tool previews are
+                                # single-line so this cap never bites.
+                                await _maybe_await(on_trace({"kind": kind, "text": text[:5000]}))
                     bb["emitted"] = True
             # message_start, message_delta, message_stop aren't surfaced.
 
