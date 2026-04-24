@@ -68,3 +68,23 @@ input, textarea {
   animation: j-blink 1s steps(1) infinite;
   color: var(--ink-2);
 }
+
+/* Shimmer — for loading placeholders and "text is still streaming" effects.
+   Gradient sweeps left→right. 1.6s loop. */
+@keyframes shim {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.shim {
+  background: linear-gradient(
+    90deg,
+    var(--paper-2) 0%,
+    var(--rule) 50%,
+    var(--paper-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: shim 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shim { animation: none; }
+}

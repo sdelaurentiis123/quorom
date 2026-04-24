@@ -1,0 +1,62 @@
+.topprog {
+  position: relative;
+  background: var(--paper);
+}
+
+.topprog-bar {
+  position: relative;
+  height: 3px;
+  background: var(--paper-2);
+  overflow: hidden;
+}
+
+.topprog-fill {
+  height: 100%;
+  background: var(--ink);
+  transition: width 320ms ease-out;
+}
+
+.topprog-pulse {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: topprog-sweep 1.4s ease-in-out infinite;
+  opacity: 0.7;
+}
+
+@keyframes topprog-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.topprog-compose {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px var(--page-pad);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-2);
+}
+.topprog-compose-label { font-size: 10px; white-space: nowrap; }
+.topprog-compose-text {
+  font-size: 11px;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topprog-pulse { animation: none; }
+}

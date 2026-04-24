@@ -50,11 +50,49 @@ _DOTTED = {
 
 
 def _fmt_tool_call(name: str, inp: dict) -> str:
+    """Format `tool.name(args)` for a trace line. Special-cased for sandbox_run
+    and arxiv_search so the user sees the actual code/query, not empty parens."""
     dotted = _DOTTED.get(name, name)
-    # Keep the arg preview short so it fits the 72-char UI trace line.
+
+    if name == "sandbox_run":
+        code = (inp.get("code") or "").strip()
+        if not code:
+            return f"$ {dotted}(…)"
+        # First non-trivial line of code is the most informative preview.
+        first = next((ln.strip() for ln in code.splitlines() if ln.strip()), "")
+        first = first[:110]
+        return f"$ {dotted}\n  {first}"
+
+    if name == "arxiv_search":
+        q = inp.get("query", "")
+        k = inp.get("k")
+        preview = f"{json.dumps(q)}" if isinstance(q, str) else str(q)
+        if k:
+            return f"$ {dotted}({preview}, k={k})"
+        return f"$ {dotted}({preview})"
+
+    if name == "arxiv_read":
+        return f"$ {dotted}({inp.get('arxiv_id','')!r})"
+
+    if name == "s2_neighbors":
+        return f"$ {dotted}({inp.get('arxiv_id','')!r}, direction={inp.get('direction','cited_by')!r})"
+
+    if name == "bootstrap":
+        data = inp.get("data", [])
+        return f"$ {dotted}(data=[{len(data)}], B={inp.get('B', 2000)})"
+
+    if name == "power_calc":
+        return f"$ {dotted}(δ={inp.get('delta','?')}, α={inp.get('alpha',0.05)}, β={inp.get('beta',0.20)})"
+
+    if name == "sympy_simplify":
+        expr = inp.get("expr", "")
+        preview = expr if len(expr) <= 54 else expr[:51] + "…"
+        return f"$ {dotted}({preview!r})"
+
+    # Fallback: first 2 args as key=value.
     preview = ", ".join(f"{k}={_short(v)}" for k, v in list(inp.items())[:2])
-    if len(preview) > 48:
-        preview = preview[:45] + "…"
+    if len(preview) > 80:
+        preview = preview[:77] + "…"
     return f"$ {dotted}({preview})"
 
 
@@ -157,7 +195,8 @@ async def run_agent_loop(
 
 
 async def _one_turn(*, client, model, system, tools, messages, on_trace, max_tokens):
-    """Run one turn through the streaming API with retry on 429/529."""
+    """Run one turn through the streaming API with retry on 429/529.
+    Honors Anthropic's `retry-after` header on 429s."""
     async for attempt in AsyncRetrying(
         stop=stop_after_attempt(4),
         wait=wait_exponential(multiplier=1, min=1, max=8),
@@ -177,17 +216,48 @@ async def _one_turn(*, client, model, system, tools, messages, on_trace, max_tok
             except (anthropic.RateLimitError, anthropic.APIStatusError) as e:
                 status = getattr(e, "status_code", None)
                 if status in (429, 529) or isinstance(e, anthropic.RateLimitError):
-                    await _maybe_await(on_trace({
-                        "kind": "think", "text": f"rate-limited ({status or '429'}); retrying…",
-                    }))
+                    # Honor retry-after header if present (capped).
+                    delay_s: float | None = None
+                    resp = getattr(e, "response", None)
+                    if resp is not None:
+                        hdr = None
+                        try:
+                            hdr = resp.headers.get("retry-after")
+                        except Exception:
+                            pass
+                        if hdr:
+                            try:
+                                delay_s = min(20.0, float(hdr))
+                            except ValueError:
+                                delay_s = None
+
+                    msg = f"rate-limited ({status or '429'})"
+                    if delay_s:
+                        msg += f"; retrying in {delay_s:.0f}s"
+                    else:
+                        msg += "; retrying…"
+                    await _maybe_await(on_trace({"kind": "think", "text": msg}))
+
+                    if delay_s:
+                        import asyncio as _asyncio
+                        await _asyncio.sleep(delay_s)
                     raise
                 raise
     raise RuntimeError("unreachable")
 
 
 async def _stream_once(*, client, model, system, tools, messages, on_trace, max_tokens):
-    """One streaming invocation. Returns the final Message object."""
+    """One streaming invocation. Returns the final Message object.
+
+    We accumulate each tool_use block's input JSON deltas so that when the
+    block closes we can emit a *meaningful* trace line — e.g.
+        $ sandbox.run
+          import numpy as np; print(np.std(...))
+    instead of the earlier `$ sandbox.run()`.
+    """
     text_buf = ""
+    # index → {name, input_buf}
+    block_buf: dict[int, dict[str, Any]] = {}
     async with client.messages.stream(
         model=model,
         system=system,
@@ -197,16 +267,13 @@ async def _stream_once(*, client, model, system, tools, messages, on_trace, max_
     ) as stream:
         async for event in stream:
             etype = getattr(event, "type", None)
+            idx = getattr(event, "index", None)
+
             if etype == "content_block_start":
                 cb = getattr(event, "content_block", None)
                 if cb is not None and getattr(cb, "type", None) == "tool_use":
-                    name = cb.name
-                    # We don't have args yet (they stream in as input_json_delta).
-                    # Emit a minimal tool trace; subsequent text_delta may elaborate.
-                    if name == "flag":
-                        pass  # wait for full input to get the flag text
-                    elif name not in ("commit_finding", "commit_senior_review", "emit_vector", "emit_verdict"):
-                        await _maybe_await(on_trace({"kind": "tool", "text": _fmt_tool_call(name, {})}))
+                    block_buf[idx] = {"name": cb.name, "input_buf": "", "emitted": False}
+
             elif etype == "content_block_delta":
                 delta = getattr(event, "delta", None)
                 if delta is None:
@@ -219,9 +286,38 @@ async def _stream_once(*, client, model, system, tools, messages, on_trace, max_
                         line, text_buf = text_buf.split("\n", 1)
                         line = line.strip()
                         if line:
-                            await _maybe_await(on_trace({"kind": "think", "text": line[:72]}))
-            # Other event types (message_start, message_delta, message_stop,
-            # content_block_stop, input_json_delta) don't produce traces directly.
+                            await _maybe_await(on_trace({"kind": "think", "text": line[:110]}))
+                elif dtype == "input_json_delta":
+                    # Partial JSON for the tool input. Buffer; parse on stop.
+                    chunk = getattr(delta, "partial_json", "") or ""
+                    if idx in block_buf:
+                        block_buf[idx]["input_buf"] += chunk
+
+            elif etype == "content_block_stop":
+                bb = block_buf.pop(idx, None)
+                if bb is not None and not bb["emitted"]:
+                    name = bb["name"]
+                    # Commit / meta tools — don't clutter the trace with their args;
+                    # their own side-effects (agent.finding etc.) are visible.
+                    if name in ("commit_finding", "commit_senior_review", "emit_vector", "emit_report", "emit_verdict"):
+                        pass
+                    elif name == "flag":
+                        # Let run_agent_loop emit the flag trace with the actual text
+                        # once the block closes in the outer loop's dispatch handling.
+                        pass
+                    else:
+                        try:
+                            parsed = json.loads(bb["input_buf"]) if bb["input_buf"].strip() else {}
+                        except json.JSONDecodeError:
+                            parsed = {}
+                        # Emit a single, meaningful trace line per tool call.
+                        text = _fmt_tool_call(name, parsed)
+                        # Split on \n so the log renders code on its own line(s).
+                        for piece in text.split("\n"):
+                            if piece.strip():
+                                await _maybe_await(on_trace({"kind": "tool", "text": piece[:140]}))
+                    bb["emitted"] = True
+            # message_start, message_delta, message_stop aren't surfaced.
 
         msg = await stream.get_final_message()
 
@@ -229,6 +325,20 @@ async def _stream_once(*, client, model, system, tools, messages, on_trace, max_
     tail = text_buf.strip()
     if tail:
         await _maybe_await(on_trace({"kind": "think", "text": tail[:72]}))
+
+    # Log cache behavior so we can see F1 working in real time.
+    try:
+        usage = getattr(msg, "usage", None)
+        if usage is not None:
+            log.info(
+                "anthropic usage: input=%d  cache_read=%d  cache_create=%d  output=%d",
+                getattr(usage, "input_tokens", 0),
+                getattr(usage, "cache_read_input_tokens", 0) or 0,
+                getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                getattr(usage, "output_tokens", 0),
+            )
+    except Exception:
+        pass
 
     return msg
 

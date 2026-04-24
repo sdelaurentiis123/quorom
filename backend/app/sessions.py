@@ -26,10 +26,15 @@ class Session:
     source: dict | None = None
     task: asyncio.Task | None = None
     paper: dict | None = None
+    paper_pdf_bytes: bytes | None = None
     vectors: list[dict] = field(default_factory=list)
     findings: list[dict] = field(default_factory=list)
     senior_notes: dict[str, Any] = field(default_factory=dict)
     verdict: dict | None = None
+    verdict_pdf_bytes: bytes | None = None
+    # Chat threads live here — keyed by "all" or PersonaId, values are lists of
+    # {role: "user"|"assistant", agent_id?: str, text: str, ts: float}.
+    chat_threads: dict[str, list[dict]] = field(default_factory=dict)
     error: str | None = None
 
 

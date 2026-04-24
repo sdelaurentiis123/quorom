@@ -1,7 +1,8 @@
-"""Verdict prompt — rank findings, compose minimum experiment."""
+"""DEPRECATED. Old verdict prompt kept for reference; the prose composer
+lives in prompts/report.py. Imports from this module are removed."""
 from __future__ import annotations
 
-VERDICT_SYSTEM = """You are the Chair rendering the final verdict of the panel. You receive:
+_DEPRECATED_VERDICT_SYSTEM = """You are the Chair rendering the final verdict of the panel. You receive:
   - the paper
   - all six reviewer findings
   - three senior reviews (concur/dissent)

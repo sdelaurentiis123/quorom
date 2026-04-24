@@ -79,17 +79,25 @@ describe("reducer", () => {
 
   it("verdict.ready flips activeTab to verdict", () => {
     const finding = { id: "STAT-1", sev: "high" as const, rank: 1, title: "t", text: "x", section: "§4", cites: [] };
-    const exp = { title: "e", resolves: ["STAT-1"], cost: { gpu_hours: 10, gpu_type: "A100", eval_sweeps: 1 }, yaml: "y" };
-    const s = reduce(initialState, env({ type: "verdict.ready", ranked: [finding], min_experiment: exp }, 1));
+    const exp = { title: "e", prose: "p", resolves: ["STAT-1"] };
+    const s = reduce(initialState, env({ type: "verdict.ready", ranked: [finding], recommended_experiment: exp, report_markdown: "# r" }, 1));
     expect(s.activeTab).toBe("verdict");
   });
 
-  it("verdict.ready stores ranked + min_experiment", () => {
+  it("phase.change to verdict auto-flips the active tab", () => {
+    let s = reduce(initialState, env({ type: "phase.change", phase: "deliberation" }, 1));
+    expect(s.activeTab).toBe("trace");
+    s = reduce(s, env({ type: "phase.change", phase: "verdict" }, 2));
+    expect(s.activeTab).toBe("verdict");
+  });
+
+  it("verdict.ready stores ranked + recommended_experiment prose", () => {
     const finding = { id: "STAT-1", sev: "high" as const, rank: 1, title: "t", text: "x", section: "§4", cites: [] };
-    const exp = { title: "e", resolves: ["STAT-1"], cost: { gpu_hours: 10, gpu_type: "A100", eval_sweeps: 1 }, yaml: "y" };
-    const s = reduce(initialState, env({ type: "verdict.ready", ranked: [finding], min_experiment: exp }, 1));
+    const exp = { title: "Re-run fig.3 at n=112", prose: "Bootstrap the effect on 112 held-out prompts to stabilize the CI.", resolves: ["STAT-1"] };
+    const s = reduce(initialState, env({ type: "verdict.ready", ranked: [finding], recommended_experiment: exp, report_markdown: "# report" }, 1));
     expect(s.verdict?.ranked[0].id).toBe("STAT-1");
-    expect(s.verdict?.minExperiment?.title).toBe("e");
+    expect(s.verdict?.recommendedExperiment?.title).toBe("Re-run fig.3 at n=112");
+    expect(s.verdict?.reportMarkdown).toBe("# report");
   });
 
   it("error event surfaces a toast", () => {

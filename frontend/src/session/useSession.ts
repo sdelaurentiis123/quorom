@@ -17,6 +17,8 @@ export function useSession() {
 
   const closeRef = useRef<null | (() => void)>(null);
   const reconnectTimer = useRef<number | null>(null);
+  const failureCount = useRef<number>(0);
+  const MAX_RECONNECTS = 3;
 
   const openStream = useCallback((sessionId: string) => {
     const sinceSeq = stateRef.current.lastSeq;
@@ -24,17 +26,49 @@ export function useSession() {
     const close = connectStream({
       sessionId,
       sinceSeq,
-      onOpen: () => dispatch({ type: "@@connection", status: "open" } as Action),
+      onOpen: () => {
+        failureCount.current = 0;
+        dispatch({ type: "@@connection", status: "open" } as Action);
+      },
       onEvent: (ev: SSEEnvelope) => dispatch(ev as Action),
       onOverflow: () => {
-        // Reconnect immediately with latest seq. Reducer dedupes via seq gate.
         dispatch({ type: "@@connection", status: "reconnecting" } as Action);
         openStream(sessionId);
       },
-      onError: () => {
+      onError: (kind) => {
+        if (kind === "not_found") {
+          // Session doesn't exist on this backend — stop reconnecting, clear state.
+          dispatch({ type: "@@connection", status: "closed" } as Action);
+          dispatch({
+            type: "@@toast",
+            toast: {
+              id: `sess-gone-${Date.now()}`,
+              kind: "neutral",
+              text: "session ended — convene a new one",
+            },
+          } as Action);
+          dispatch({ type: "@@reset" } as Action);
+          return;
+        }
+        failureCount.current += 1;
+        if (failureCount.current >= MAX_RECONNECTS) {
+          dispatch({ type: "@@connection", status: "closed" } as Action);
+          dispatch({
+            type: "@@toast",
+            toast: {
+              id: `disc-${Date.now()}`,
+              kind: "error",
+              text: `disconnected from backend after ${MAX_RECONNECTS} attempts`,
+            },
+          } as Action);
+          return;
+        }
         dispatch({ type: "@@connection", status: "reconnecting" } as Action);
         if (reconnectTimer.current !== null) window.clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = window.setTimeout(() => openStream(sessionId), RECONNECT_DELAY_MS);
+        reconnectTimer.current = window.setTimeout(
+          () => openStream(sessionId),
+          RECONNECT_DELAY_MS * failureCount.current,
+        );
       },
     });
     closeRef.current = close;

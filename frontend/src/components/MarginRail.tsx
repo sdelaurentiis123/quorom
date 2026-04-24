@@ -42,10 +42,24 @@ export function MarginRail({
     );
   }
 
+  // Render cards ONLY for personas the Chair actually convened. Reading phase
+  // emits vector.identified per chosen seat; STLM is force-appended downstream.
+  // Without this filter the rail showed every seat from PERSONAS and un-convened
+  // ones sat in "queued" forever — confusing ("5 agents but 1 never runs").
+  const convenedIds = new Set(state.vectors.map((v) => v.agent_id));
+  const convened = PERSONAS.filter((p) => convenedIds.has(p.id));
+
   return (
     <div className="margin-rail rail-cards">
-      <div className="j-mono j-sc j-dim rail-label">margin · panel annotations</div>
-      {PERSONAS.map((p) => (
+      <div className="j-mono j-sc j-dim rail-label">
+        margin · panel ({convened.length} reviewer{convened.length === 1 ? "" : "s"})
+      </div>
+      {convened.length === 0 && (
+        <div className="j-dim j-mono j-tiny rail-empty">
+          waiting for Chair to convene the panel…
+        </div>
+      )}
+      {convened.map((p) => (
         <AgentCard
           key={p.id}
           persona={p}

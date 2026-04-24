@@ -6,7 +6,7 @@
 .topnav-tabs {
   display: flex;
   border-bottom: 1px solid var(--rule);
-  padding: 0 24px;
+  padding: 0 var(--page-pad);
   gap: 2px;
 }
 
@@ -44,4 +44,7 @@
 .topnav-ribbon {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
+  /* Align the first tab's left edge with the Quorum masthead title.
+     Left pad matches the other gutters; right side flushes to the edge. */
+  padding-left: var(--page-pad);
 }

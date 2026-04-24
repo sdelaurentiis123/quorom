@@ -2,7 +2,7 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 14px 32px;
+  padding: 14px var(--page-pad);
   border-bottom: 2px solid var(--ink);
 }
 .masthead-left  { display: flex; align-items: baseline; gap: 12px; }

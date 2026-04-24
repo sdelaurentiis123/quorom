@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Masthead } from "./Masthead";
 import { PERSONAS } from "../types";
 import "./PhaseIdle.css";
@@ -12,6 +12,7 @@ export function PhaseIdle({ onConvene }: { onConvene: (p: ConvenePayload) => voi
   const [url, setUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseArxivId = (s: string): string | null => {
     const trimmed = s.trim();
@@ -83,8 +84,29 @@ export function PhaseIdle({ onConvene }: { onConvene: (p: ConvenePayload) => voi
                 onKeyDown={(e) => { if (e.key === "Enter") handleConvene(); }}
               />
               <button className="btn btn-primary j-mono j-sc" onClick={handleConvene} disabled={uploading}>
-                convene →
+                {uploading ? "uploading…" : "convene →"}
               </button>
+            </div>
+            <div className="dz-row dz-row-second">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleFile(f);
+                  e.target.value = ""; // allow re-select same file
+                }}
+              />
+              <button
+                className="btn j-mono j-sc dz-choose"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+              >
+                choose pdf…
+              </button>
+              <span className="j-mono j-tiny j-dim dz-or">or drop a file anywhere on this panel</span>
             </div>
             <div className="dz-hint j-mono j-tiny j-dim">
               no URL? <button className="linklike j-mono j-tiny" onClick={() => onConvene({ kind: "demo" })}>try the demo paper</button>

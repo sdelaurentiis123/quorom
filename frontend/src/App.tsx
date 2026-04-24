@@ -2,11 +2,11 @@ import { useSession } from "./session/useSession";
 import { Masthead } from "./components/Masthead";
 import { PhaseIdle } from "./components/PhaseIdle";
 import { TopNav } from "./components/TopNav";
-import { PaperBody } from "./components/PaperBody";
+import { PaperPDF } from "./components/PaperPDF";
 import { MarginRail } from "./components/MarginRail";
 import { VerdictPage } from "./components/VerdictPage";
 import { Toasts } from "./components/Toasts";
-import { VerdictComposing } from "./components/VerdictComposing";
+import { TopProgress } from "./components/TopProgress";
 import "./App.css";
 
 export default function App() {
@@ -29,26 +29,31 @@ export default function App() {
             verdictReady={verdictReady}
             onSetTab={actions.setTab}
           />
+          <TopProgress
+            phase={state.phase}
+            verdictReady={verdictReady}
+            verdictTraces={state.verdictTraces}
+          />
 
-          {state.activeTab === "verdict" && state.verdict ? (
+          {state.activeTab === "verdict" ? (
             <VerdictPage
               verdict={state.verdict}
-              paperTitle={state.paper?.title ?? ""}
+              verdictTraces={state.verdictTraces}
+              phase={state.phase}
+              paper={state.paper}
               sessionId={state.sessionId}
               selected={state.selectedFindingId}
+              committedAgentIds={Object.entries(state.agents)
+                .filter(([, slice]) => slice?.state === "done" && slice?.finding)
+                .map(([id]) => id as import("./types").PersonaId)}
               onSelect={actions.selectFinding}
-              onCopyYaml={actions.copyYaml}
               onBackToTrace={() => actions.setTab("trace")}
             />
           ) : (
             <div className="grid">
-              <PaperBody paper={state.paper} vectors={state.vectors} />
+              <PaperPDF paper={state.paper} sessionId={state.sessionId} />
               <MarginRail state={state} onSelect={actions.selectFinding} />
             </div>
-          )}
-
-          {state.phase === "verdict" && !state.verdict && (
-            <VerdictComposing traces={state.verdictTraces} />
           )}
         </>
       )}

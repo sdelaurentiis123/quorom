@@ -22,7 +22,7 @@ export type ConnectOpts = {
   onEvent: (ev: SSEEnvelope) => void;
   onOverflow: () => void; // triggered on _overflow — caller reconnects
   onOpen: () => void;
-  onError: () => void; // transport error; caller decides whether to retry
+  onError: (kind: "transient" | "not_found") => void;
 };
 
 /**
@@ -35,8 +35,12 @@ export type ConnectOpts = {
 export function connectStream(opts: ConnectOpts): () => void {
   const url = `/api/sessions/${opts.sessionId}/stream?since_seq=${opts.sinceSeq}`;
   const es = new EventSource(url);
+  let opened = false;
 
-  es.onopen = () => opts.onOpen();
+  es.onopen = () => {
+    opened = true;
+    opts.onOpen();
+  };
 
   for (const name of EVENT_NAMES) {
     es.addEventListener(name, (m: MessageEvent) => {
@@ -53,9 +57,21 @@ export function connectStream(opts: ConnectOpts): () => void {
     });
   }
 
-  es.onerror = () => {
+  es.onerror = async () => {
     es.close();
-    opts.onError();
+    // If we never opened, it's likely the session doesn't exist (404) or the
+    // backend is down. Probe with HEAD (which returns 200/404) to distinguish.
+    if (!opened) {
+      try {
+        const probe = await fetch(`/api/sessions/${opts.sessionId}`, { method: "GET" });
+        opts.onError(probe.status === 404 ? "not_found" : "transient");
+        return;
+      } catch {
+        opts.onError("transient");
+        return;
+      }
+    }
+    opts.onError("transient");
   };
 
   return () => es.close();

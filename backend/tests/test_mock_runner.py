@@ -50,8 +50,10 @@ async def test_full_phase_sequence_emits_verdict():
         "intake", "reading", "deliberation", "converging", "verdict",
     ]
     assert "paper.extracted" in types
-    assert types.count("vector.identified") == 6
-    assert types.count("agent.finding") == 6
+    # Panel is 5 seats now (METH, STAT, THRY, EMPR, STLM); HIST removed.
+    # The real runner caps to 3 non-STLM + STLM = 4; the mock runs all 5 for visibility.
+    assert types.count("vector.identified") == 5
+    assert types.count("agent.finding") == 5
     assert types.count("senior.signed") == 3
     assert types[-1] == "verdict.ready"
 

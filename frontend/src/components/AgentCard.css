@@ -6,6 +6,12 @@
   margin-bottom: 10px;
   cursor: pointer;
   transition: border-color 160ms;
+  /* Cap total card height so long traces + long findings don't push the rail
+     into a scrollable wall. Inner sections handle their own overflow. */
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .agent-card:hover { border-color: var(--ink-2); }
 .agent-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -41,7 +47,15 @@
   padding-top: 6px;
   border-top: 1px dashed var(--rule);
   min-height: 46px;
+  flex: 1;               /* take remaining vertical space inside the card */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-3) transparent;
 }
+.agent-log::-webkit-scrollbar { width: 6px; }
+.agent-log::-webkit-scrollbar-thumb { background: var(--ink-3); border-radius: 3px; }
+.agent-log::-webkit-scrollbar-track { background: transparent; }
 .log-queued { font-style: italic; }
 
 .log-line {
@@ -51,14 +65,13 @@
   animation: j-fadein 180ms ease-out;
   display: flex;
   gap: 6px;
+  padding: 1px 0;
 }
 .log-line.log-live { color: var(--ink); }
 .log-icon { flex-shrink: 0; }
 .log-text {
   flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .agent-finding {
@@ -68,9 +81,14 @@
   display: flex;
   gap: 8px;
   align-items: flex-start;
+  max-height: 140px;
+  overflow-y: auto;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-3) transparent;
 }
 .agent-finding-text {
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.45;
   flex: 1;
 }

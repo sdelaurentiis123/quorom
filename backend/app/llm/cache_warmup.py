@@ -22,12 +22,18 @@ async def warmup_reviewer_cache(
     system_blocks: list[dict[str, Any]],
 ) -> None:
     try:
-        await client.messages.create(
+        resp = await client.messages.create(
             model=model,
             max_tokens=1,
             system=system_blocks,
             messages=[{"role": "user", "content": "warm"}],
         )
-        log.info("prompt cache warmed")
+        u = resp.usage
+        log.info(
+            "cache warmup complete: input=%d  cache_create=%d  cache_read=%d",
+            getattr(u, "input_tokens", 0),
+            getattr(u, "cache_creation_input_tokens", 0) or 0,
+            getattr(u, "cache_read_input_tokens", 0) or 0,
+        )
     except Exception as e:
         log.warning("prompt cache warmup failed (non-fatal): %s", e)

@@ -46,7 +46,7 @@ describe("sseClient", () => {
       onEvent: (e) => events.push(e),
       onOverflow: () => {},
       onOpen: () => {},
-      onError: () => {},
+      onError: () => {},  // signature is (kind) => void, ignored for these tests
     });
 
     const es = MockEventSource.last!;
@@ -64,7 +64,7 @@ describe("sseClient", () => {
       onEvent: () => {},
       onOverflow: () => {},
       onOpen: () => {},
-      onError: () => {},
+      onError: () => {},  // signature is (kind) => void, ignored for these tests
     });
     expect(MockEventSource.last!.url).toBe("/api/sessions/abc/stream?since_seq=42");
   });
@@ -77,7 +77,7 @@ describe("sseClient", () => {
       onEvent: () => {},
       onOverflow: () => { overflowed = true; },
       onOpen: () => {},
-      onError: () => {},
+      onError: () => {},  // signature is (kind) => void, ignored for these tests
     });
     const es = MockEventSource.last!;
     es.fire("_overflow", { type: "_overflow", seq: 99, session_id: "s", ts: 0 });
@@ -85,20 +85,39 @@ describe("sseClient", () => {
     expect(es.closed).toBe(true);
   });
 
-  it("transport error invokes onError and closes", () => {
-    let errored = false;
+  it("transport error invokes onError and closes", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 500 }));
+    let kind: string | null = null;
     connectStream({
       sessionId: "s",
       sinceSeq: 0,
       onEvent: () => {},
       onOverflow: () => {},
       onOpen: () => {},
-      onError: () => { errored = true; },
+      onError: (k) => { kind = k; },
     });
     const es = MockEventSource.last!;
     es.triggerError();
-    expect(errored).toBe(true);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(kind).toBe("transient");
     expect(es.closed).toBe(true);
+  });
+
+  it("onError reports not_found when backend returns 404", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 404 }));
+    let kind: string | null = null;
+    connectStream({
+      sessionId: "missing",
+      sinceSeq: 0,
+      onEvent: () => {},
+      onOverflow: () => {},
+      onOpen: () => {},
+      onError: (k) => { kind = k; },
+    });
+    const es = MockEventSource.last!;
+    es.triggerError();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(kind).toBe("not_found");
   });
 
   it("drops malformed event payloads without dying", () => {
@@ -109,7 +128,7 @@ describe("sseClient", () => {
       onEvent: (e) => events.push(e),
       onOverflow: () => {},
       onOpen: () => {},
-      onError: () => {},
+      onError: () => {},  // signature is (kind) => void, ignored for these tests
     });
     const es = MockEventSource.last!;
     // Fire a malformed payload: the stub's fire() calls JSON.parse on data.

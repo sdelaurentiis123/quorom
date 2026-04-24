@@ -11,10 +11,10 @@ export type Phase =
 export type TraceKind = "read" | "tool" | "think" | "flag" | "commit";
 export type Sev = "high" | "med" | "low" | "note";
 export type Seat = "a" | "b" | "c" | "d" | "e" | "f";
-export type PersonaId = "METH" | "STAT" | "THRY" | "EMPR" | "HIST" | "STLM";
+export type PersonaId = "METH" | "STAT" | "THRY" | "EMPR" | "STLM";
 export type SeniorId = "CHAIR" | "SKEPTIC" | "METHOD";
 
-export const PERSONA_IDS: PersonaId[] = ["METH", "STAT", "THRY", "EMPR", "HIST", "STLM"];
+export const PERSONA_IDS: PersonaId[] = ["METH", "STAT", "THRY", "EMPR", "STLM"];
 export const SENIOR_IDS: SeniorId[] = ["CHAIR", "SKEPTIC", "METHOD"];
 
 export type Section = { id: string; title: string };
@@ -28,6 +28,7 @@ export type Paper = {
   sections: Section[];
   body?: string;
   body_format?: "markdown" | "text";
+  has_pdf?: boolean;
 };
 
 export type Persona = {
@@ -53,11 +54,11 @@ export type Finding = {
   cites: string[];
 };
 
-export type MinExperiment = {
+/** The panel's recommended next experiment — prose-only. No YAML. */
+export type RecommendedExperiment = {
   title: string;
+  prose: string;
   resolves: string[];
-  cost: { gpu_hours: number; gpu_type: string; eval_sweeps: number };
-  yaml: string;
 };
 
 /* SSE events — names match backend/app/bus.py publish payloads. */
@@ -75,7 +76,7 @@ export type SSEEvent =
   | { type: "senior.signed"; senior_id: SeniorId }
   | { type: "senior.inconclusive"; senior_id: SeniorId }
   | { type: "verdict.trace"; trace: TraceEvent }
-  | { type: "verdict.ready"; ranked: Finding[]; min_experiment: MinExperiment }
+  | { type: "verdict.ready"; ranked: Finding[]; recommended_experiment: RecommendedExperiment; report_markdown: string }
   | { type: "error"; where: string; message: string }
   | { type: "_overflow" }
   | { type: "_end" };
@@ -86,13 +87,13 @@ export type SSEEnvelope<E extends SSEEvent = SSEEvent> = E & {
   ts: number;
 };
 
-/* Canonical persona roster for the UI. Ports prototype J_PERSONAS. */
+/* Canonical persona roster for the UI. Five seats; the panel always ends
+ * up with 4 reviewers (3 picked by the Chair + STLM). */
 export const PERSONAS: Persona[] = [
   { id: "METH", seat: "a", name: "The Methodologist", angle: "Experimental design, ablations, controls." },
   { id: "STAT", seat: "b", name: "The Statistician", angle: "Power, significance, confidence intervals." },
   { id: "THRY", seat: "c", name: "The Theorist", angle: "Mechanism, priors, first-principles." },
   { id: "EMPR", seat: "d", name: "The Empiricist", angle: "Replication, adjacent evidence, prior art." },
-  { id: "HIST", seat: "e", name: "The Historian", angle: "Lineage of claims, precedent, negative results." },
   { id: "STLM", seat: "f", name: "The Steelman", angle: "Strongest version of the paper's argument." },
 ];
 
@@ -135,7 +136,11 @@ export type SessionState = {
   senior: Partial<Record<SeniorId, SeniorSlice>>;
   chair: ChairSlice;
   verdictTraces: TraceEvent[];
-  verdict: { ranked: Finding[]; minExperiment: MinExperiment | null } | null;
+  verdict: {
+    ranked: Finding[];
+    recommendedExperiment: RecommendedExperiment | null;
+    reportMarkdown: string;
+  } | null;
   lastSeq: number;
   connectionState: "idle" | "connecting" | "open" | "reconnecting" | "closed";
   toasts: Toast[];

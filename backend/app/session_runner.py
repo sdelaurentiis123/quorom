@@ -37,19 +37,19 @@ from .ingest.arxiv_ingest import IngestError
 from .llm.cache_warmup import warmup_reviewer_cache
 from .llm.client import get_client
 from .llm.prompts import orchestrator as orch_prompt
+from .llm.prompts import report as report_prompt
 from .llm.prompts import reviewer as rev_prompt
 from .llm.prompts import senior as senior_prompt
-from .llm.prompts import verdict as verdict_prompt
 from .llm.stream_loop import default_validate_commit_finding, run_agent_loop
 from .llm.tools_schema import (
     ORCHESTRATOR_TOOLS,
+    REPORT_TOOLS,
     SENIOR_TOOLS,
     TOOL_SCHEMAS,
-    VERDICT_TOOLS,
 )
 from .sessions import Session
 from .tools.dispatch import execute_tool
-from .types import PERSONAS, PERSONA_IDS, SENIORS
+from .types import MAX_REVIEWERS_NON_STLM, ORCHESTRATOR_POOL, PERSONAS, PERSONA_IDS, SENIORS
 
 log = logging.getLogger("quorum.session_runner")
 
@@ -68,16 +68,19 @@ async def run_session(sess: Session) -> None:
         bus.publish({"type": "phase.change", "phase": "intake"})
         source = sess.source or {}
         try:
-            paper, body_text = await _ingest(source)
+            paper, body_text, pdf_bytes = await _ingest(source)
         except IngestError as e:
             log.warning("ingest failed for %s: %s", sess.id, e)
             bus.publish({"type": "error", "where": "intake", "message": str(e)})
             return
 
-        log.info("ingested %s (%d chars body, fmt=%s)", paper.get("id"), len(body_text), paper.get("body_format"))
+        log.info("ingested %s (%d chars body, fmt=%s, pdf=%d bytes)",
+                 paper.get("id"), len(body_text), paper.get("body_format"), len(pdf_bytes) if pdf_bytes else 0)
         sections = await sectionize.sectionize(body_text)
         paper["sections"] = sections
+        paper["has_pdf"] = bool(pdf_bytes)
         sess.paper = paper
+        sess.paper_pdf_bytes = pdf_bytes
         bus.publish({"type": "paper.extracted", "paper": paper})
 
         # ───────── READING ─────────
@@ -104,7 +107,30 @@ async def run_session(sess: Session) -> None:
         verdict = await _verdict(paper, findings, senior_notes, bus)
         if verdict is not None:
             sess.verdict = verdict
-            bus.publish({"type": "verdict.ready", **verdict})
+            # Generate the academic-panel-report PDF from the prose markdown
+            # BEFORE publishing verdict.ready, so the iframe has bytes to serve
+            # the moment the tab flips.
+            try:
+                from .verdict_pdf import generate_verdict_pdf
+                committed_ids = [f.get("id", "").split("-")[0] for f in findings if f.get("id")]
+                pdf_bytes = generate_verdict_pdf(
+                    paper=paper,
+                    report_markdown=verdict.get("report_markdown") or "",
+                    session_id=sess.id,
+                    committed_agent_ids=[cid for cid in committed_ids if cid],
+                )
+                sess.verdict_pdf_bytes = pdf_bytes
+                log.info("verdict PDF generated: %d bytes (markdown=%d chars)",
+                         len(pdf_bytes), len(verdict.get("report_markdown") or ""))
+            except Exception as e:  # pragma: no cover
+                log.exception("verdict PDF generation failed: %s", e)
+            # Publish verdict.ready with prose payload only.
+            bus.publish({
+                "type": "verdict.ready",
+                "ranked": verdict.get("ranked") or [],
+                "recommended_experiment": verdict.get("recommended_experiment") or _fallback_recommended_experiment(findings),
+                "report_markdown": verdict.get("report_markdown") or "",
+            })
         log.info("session %s complete (t+%.1fs)", sess.id, time.monotonic() - t0)
 
     except asyncio.CancelledError:
@@ -122,7 +148,7 @@ async def run_session(sess: Session) -> None:
 # ingest
 # ───────────────────────────────────────────────────────────────────────
 
-async def _ingest(source: dict[str, Any]) -> tuple[dict, str]:
+async def _ingest(source: dict[str, Any]) -> tuple[dict, str, bytes | None]:
     kind = source.get("kind")
     if kind == "arxiv":
         return await arxiv_ingest.fetch_arxiv(source["id"])
@@ -142,8 +168,9 @@ async def _ingest(source: dict[str, Any]) -> tuple[dict, str]:
             "sections": [],
             "body": body[:60_000],
             "body_format": fmt,
+            "has_pdf": True,
         }
-        return paper, body
+        return paper, body, data
     if kind == "demo":
         return await arxiv_ingest.fetch_arxiv("2604.01188")
     raise IngestError(f"unknown source kind: {kind!r}")
@@ -182,15 +209,20 @@ async def _reading(body_text: str, sections: list[dict], bus: SessionBus) -> lis
         if name == "emit_vector":
             agent_id = inp.get("agent_id")
             angle = inp.get("angle", "")
-            if agent_id in PERSONA_IDS and agent_id != "STLM":
-                vector = {"agent_id": agent_id, "angle": angle}
-                if not any(v["agent_id"] == agent_id for v in emitted):
-                    emitted.append(vector)
-                    bus.publish({"type": "vector.identified", **vector})
-                    bus.publish({
-                        "type": "chair.trace",
-                        "trace": {"t": 0.5, "kind": "flag", "text": f"convene {agent_id}: {angle[:60]}"},
-                    })
+            if agent_id not in ORCHESTRATOR_POOL:
+                return {"ok": False, "error": f"{agent_id!r} is not in the orchestrator pool {ORCHESTRATOR_POOL}"}
+            if len([v for v in emitted if v["agent_id"] != "STLM"]) >= MAX_REVIEWERS_NON_STLM:
+                # Hard cap — tell the model to stop.
+                return {"ok": False, "error": f"panel is full: {MAX_REVIEWERS_NON_STLM} non-STLM reviewers already convened"}
+            if any(v["agent_id"] == agent_id for v in emitted):
+                return {"ok": False, "error": f"{agent_id} already convened"}
+            vector = {"agent_id": agent_id, "angle": angle}
+            emitted.append(vector)
+            bus.publish({"type": "vector.identified", **vector})
+            bus.publish({
+                "type": "chair.trace",
+                "trace": {"t": 0.5, "kind": "flag", "text": f"convene {agent_id}: {angle[:60]}"},
+            })
             return {"ok": True}
         return {"ok": False, "error": f"unknown tool {name}"}
 
@@ -405,61 +437,134 @@ async def _converging(paper: dict, findings: list[dict], bus: SessionBus) -> dic
 # ───────────────────────────────────────────────────────────────────────
 
 async def _verdict(paper: dict, findings: list[dict], senior_notes: dict[str, dict], bus: SessionBus) -> dict | None:
+    """Compose the panel verdict as prose + structured ranking.
+
+    The report prompt (prompts/report.py) instructs Opus to write a full
+    referee-report Markdown document, then call the `emit_report` tool with
+    {markdown, ranked_ids, recommended_experiment}. We stream its text_delta
+    tokens as `verdict.trace` events so the UI's composing state shows real
+    activity throughout the ~60-90s composition.
+    """
     client = get_client()
     collected: dict[str, Any] = {}
 
     async def on_trace(trace: dict) -> None:
+        # Stream composer thinking + tool calls into the UI's composing log.
         bus.publish({
             "type": "verdict.trace",
-            "trace": {"t": 0.5, "kind": trace.get("kind", "think"), "text": trace.get("text", "")[:120]},
+            "trace": {
+                "t": 0.5,
+                "kind": trace.get("kind", "think"),
+                "text": trace.get("text", "")[:160],
+            },
         })
 
     async def dispatch(name: str, inp: dict, _on_trace) -> dict:
-        if name == "emit_verdict":
-            collected["ranked"] = inp.get("ranked") or findings
-            collected["min_experiment"] = inp.get("min_experiment") or _fallback_min_experiment(findings)
+        if name == "emit_report":
+            md = (inp.get("markdown") or "").strip()
+            ranked_ids = inp.get("ranked_ids") or []
+            # Re-rank the findings in the order the composer chose.
+            by_id = {f.get("id"): f for f in findings}
+            ranked = []
+            for rid in ranked_ids:
+                f = by_id.get(rid)
+                if f:
+                    f_copy = dict(f)
+                    f_copy["rank"] = len(ranked) + 1
+                    ranked.append(f_copy)
+            # Append any findings the composer forgot to rank, at the end.
+            for f in findings:
+                if f.get("id") not in {r.get("id") for r in ranked}:
+                    f_copy = dict(f)
+                    f_copy["rank"] = len(ranked) + 1
+                    ranked.append(f_copy)
+
+            rec = inp.get("recommended_experiment") or {}
+            if "title" not in rec or "prose" not in rec:
+                rec = _fallback_recommended_experiment(findings)
+
+            collected["report_markdown"] = md
+            collected["ranked"] = ranked
+            collected["recommended_experiment"] = rec
+            await _maybe_await(on_trace({"kind": "commit", "text": f"report committed ({len(md)} chars)"}))
             return {"ok": True}
         return {"ok": False, "error": f"unknown {name}"}
 
-    bus.publish({"type": "verdict.trace", "trace": {"t": 0.02, "kind": "read", "text": f"ranking {len(findings)} findings"}})
+    bus.publish({
+        "type": "verdict.trace",
+        "trace": {"t": 0.02, "kind": "read",
+                  "text": f"composing verdict from {len(findings)} findings + {len(senior_notes or {})} senior notes"},
+    })
 
     await run_agent_loop(
         client=client,
         model=config.MODEL_VERDICT,
-        system=verdict_prompt.VERDICT_SYSTEM,
-        user_msg=verdict_prompt.build_verdict_user(paper["title"], findings, senior_notes),
-        tools=VERDICT_TOOLS,
+        system=report_prompt.REPORT_SYSTEM,
+        user_msg=report_prompt.build_report_user(paper, findings, senior_notes),
+        tools=REPORT_TOOLS,
         on_trace=on_trace,
         dispatch_tool=dispatch,
         commit_tool_name="__never__",
         max_turns=2,
-        max_tokens=config.VERDICT_MAX_TOKENS,
+        max_tokens=config.VERDICT_MAX_TOKENS * 2,  # prose is long
     )
 
     if not collected:
-        log.warning("verdict: model did not emit_verdict; using fallback")
+        log.warning("verdict: composer did not emit_report; using plain fallback")
+        collected["report_markdown"] = _fallback_report_markdown(paper, findings, senior_notes)
         collected["ranked"] = sorted(findings, key=lambda f: f.get("rank", 99))
-        collected["min_experiment"] = _fallback_min_experiment(findings)
+        collected["recommended_experiment"] = _fallback_recommended_experiment(findings)
     return collected
 
 
-def _fallback_min_experiment(findings: list[dict]) -> dict:
+async def _maybe_await(v):
+    if hasattr(v, "__await__"):
+        await v
+
+
+def _fallback_recommended_experiment(findings: list[dict]) -> dict:
     top = findings[0] if findings else None
-    if top:
+    if not top:
         return {
-            "title": f"Resolve {top.get('id', '?')}: {top.get('title', '')}",
-            "resolves": [top.get("id", "")],
-            "cost": {"gpu_hours": 24.0, "gpu_type": "A100-80G", "eval_sweeps": 1},
-            "yaml": (
-                "experiment:\n"
-                f"  name: resolve_{top.get('id','top').lower().replace('-', '_')}\n"
-                f"  objective: {top.get('title','')}\n"
-                f"  resolves: [{top.get('id','?')}]\n"
-            ),
+            "title": "Re-review after revisions",
+            "prose": "The panel recommends re-running the review once the authors have addressed the concerns above.",
+            "resolves": [],
         }
     return {
-        "title": "No critical concerns — re-review after revision",
-        "resolves": [],
-        "cost": {"gpu_hours": 0, "gpu_type": "—", "eval_sweeps": 0},
-        "yaml": "experiment: null\n",
+        "title": f"Targeted re-run to resolve {top.get('id', '?')}",
+        "prose": (
+            f"The panel recommends a targeted follow-up experiment focused on "
+            f"resolving the highest-priority concern — {top.get('title','')} (§{top.get('section','')}). "
+            "Run the minimum ablation that cleanly isolates the contested axis "
+            "and report the result with properly-powered statistics. "
+            "This should require a modest compute budget on the order of 12–36 A100-hours."
+        ),
+        "resolves": [top.get("id", "")],
     }
+
+
+def _fallback_report_markdown(paper: dict, findings: list[dict], _senior_notes: dict) -> str:
+    lines = [f"# Executive Summary", ""]
+    lines.append(
+        f"The Quorum panel reviewed *{paper.get('title','the submitted paper')}*. "
+        f"The panel surfaced {len(findings)} material concern(s) spanning methodology, "
+        "statistics, and prior art. The composer was unable to produce a full prose report "
+        "for this session; please consult the per-concern details below."
+    )
+    lines.append("")
+    lines.append("## Principal Concerns")
+    for i, f in enumerate(findings, start=1):
+        lines.append("")
+        lines.append(f"### {i:02d} — {f.get('title','(no title)')}")
+        lines.append("")
+        lines.append(
+            f"Surfaced by {(f.get('id','') or '').split('-')[0]} in §{f.get('section','?')}: "
+            f"{f.get('text','(no detail)')}"
+        )
+    lines.append("")
+    lines.append("## Recommended Next Experiment")
+    lines.append("")
+    lines.append(
+        "See the recommended-experiment card alongside this report for the suggested follow-up."
+    )
+    return "\n".join(lines)

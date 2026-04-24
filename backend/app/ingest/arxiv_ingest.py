@@ -23,8 +23,8 @@ def normalize_arxiv_id(s: str) -> str:
     return m.group(1) if m else s
 
 
-async def fetch_arxiv(arxiv_id: str) -> tuple[dict, str]:
-    """Returns (paper_dict, full_body_text). Raises IngestError on failure."""
+async def fetch_arxiv(arxiv_id: str) -> tuple[dict, str, bytes]:
+    """Returns (paper_dict, full_body_text, pdf_bytes). Raises IngestError on failure."""
     arxiv_id = normalize_arxiv_id(arxiv_id)
 
     def _meta() -> arxiv.Result | None:
@@ -52,7 +52,8 @@ async def fetch_arxiv(arxiv_id: str) -> tuple[dict, str]:
     if resp.status_code != 200:
         raise IngestError(f"arxiv PDF fetch returned HTTP {resp.status_code}")
 
-    body, fmt = pdf_ingest.extract_markdown(resp.content)
+    pdf_bytes = resp.content
+    body, fmt = pdf_ingest.extract_markdown(pdf_bytes)
 
     paper = {
         "id": rec.get_short_id(),
@@ -63,8 +64,9 @@ async def fetch_arxiv(arxiv_id: str) -> tuple[dict, str]:
         "sections": [],  # filled by sectionize
         "body": body[:60_000],  # 60k chars ≈ 15k tokens; enough for UI + LLM
         "body_format": fmt,
+        "has_pdf": True,
     }
-    return paper, body
+    return paper, body, pdf_bytes
 
 
 class IngestError(Exception):

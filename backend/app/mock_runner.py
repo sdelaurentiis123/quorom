@@ -64,12 +64,6 @@ _DEMO_TRACES = {
         ("flag", "baseline omission is not acknowledged"),
         ("commit", "finding committed · severity: MED"),
     ],
-    "HIST": [
-        ("tool", "$ semanticscholar.cites(\"this work\")"),
-        ("read", "read Chen'22 (tried similar, failed)"),
-        ("flag", "two prior negatives uncited"),
-        ("commit", "finding committed · severity: LOW"),
-    ],
     "STLM": [
         ("read", "read §1 claims carefully"),
         ("think", "charitable: effect IS robust at scale"),
@@ -90,10 +84,7 @@ _DEMO_FINDINGS = {
     "EMPR": {"id": "EMPR-1", "sev": "med", "rank": 4, "title": "Stronger prior baseline is omitted",
              "text": "Kaplan'24 reports superior HELM-μ calibration on comparable models. The paper does not cite or compare against it.",
              "section": "§2", "cites": ["Kaplan'24"]},
-    "HIST": {"id": "HIST-1", "sev": "low", "rank": 5, "title": "Two prior negative results uncited",
-             "text": "Chen'22 and Park'23 report failed attempts at similar claims and are not engaged with in related work.",
-             "section": "§2", "cites": ["Chen'22", "Park'23"]},
-    "STLM": {"id": "STLM-1", "sev": "note", "rank": 6, "title": "Charitable rewrite of claim C1",
+    "STLM":{"id": "STLM-1", "sev": "note", "rank": 6, "title": "Charitable rewrite of claim C1",
              "text": "A directional (rather than measured-effect) framing of the headline claim would survive STAT-1 with only minor rephrasing in §1.",
              "section": "§1", "cites": ["§1.2"]},
 }

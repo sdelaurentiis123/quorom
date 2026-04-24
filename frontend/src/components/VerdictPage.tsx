@@ -1,117 +1,201 @@
-import type { Finding, MinExperiment } from "../types";
-import { PERSONAS } from "../types";
-import { SevBadge } from "./SevBadge";
+import { useMemo } from "react";
+import type { Finding, Paper, PersonaId, Phase, RecommendedExperiment, TraceEvent } from "../types";
+import { ClaudeCodePackage } from "./ClaudeCodePackage";
+import { ChatCard } from "./ChatCard";
 import "./VerdictPage.css";
 
-/** Full-page verdict report — replaces the old bottom slide-up modal.
- *  This is a printable academic-panel report: masthead, ranked findings on
- *  left, minimum experiment + consensus on right. Agent IDs link back to the
- *  trace view. */
+type Verdict = {
+  ranked: Finding[];
+  recommendedExperiment: RecommendedExperiment | null;
+  reportMarkdown: string;
+};
+
 export function VerdictPage({
   verdict,
-  paperTitle,
+  verdictTraces,
+  phase,
+  paper,
   sessionId,
   selected,
+  committedAgentIds,
   onSelect,
-  onCopyYaml,
   onBackToTrace,
 }: {
-  verdict: { ranked: Finding[]; minExperiment: MinExperiment | null };
-  paperTitle: string;
+  verdict: Verdict | null;
+  verdictTraces: TraceEvent[];
+  phase: Phase;
+  paper: Paper | null;
   sessionId: string | null;
   selected: string | null;
+  committedAgentIds: PersonaId[];
   onSelect: (id: string | null) => void;
-  onCopyYaml: (yaml: string) => void;
   onBackToTrace: () => void;
 }) {
-  const exp = verdict.minExperiment;
+  const composing = verdict === null;
+  const markdown = useMemo(
+    () => (verdict ? buildClaudeCodeMarkdown(paper, verdict) : ""),
+    [paper, verdict],
+  );
+  const lastTrace = verdictTraces[verdictTraces.length - 1];
+  const recentTraces = verdictTraces.slice(-6);
+
   return (
     <div className="verdict-page">
       <header className="verdict-page-head">
         <div>
-          <div className="j-mono j-sc j-dim">verdict report · session {sessionId?.slice(0, 6) ?? "—"}</div>
-          <div className="verdict-page-title j-serif">{paperTitle || "Ranked concerns"}</div>
+          <div className="j-mono j-sc j-dim">
+            verdict report · session {sessionId?.slice(0, 6) ?? "—"}
+          </div>
+          <div className="verdict-page-title j-serif">
+            {paper?.title || "Ranked concerns"}
+          </div>
         </div>
         <div className="verdict-page-stamp-row">
-          <div className="j-mono j-sc stamp">quorum reached</div>
-          <button className="btn j-mono j-sc" onClick={onBackToTrace}>← back to trace</button>
+          {composing ? (
+            <div className="j-mono j-sc verdict-composing-stamp">composing…</div>
+          ) : (
+            <div className="j-mono j-sc stamp">quorum reached</div>
+          )}
+          <button
+            className="btn j-mono j-sc"
+            onClick={onBackToTrace}
+            disabled={phase !== "verdict"}
+          >
+            ← back to trace
+          </button>
         </div>
       </header>
 
       <div className="verdict-page-body">
         <section className="verdict-left">
-          <div className="verdict-section-label j-mono j-sc j-dim">ranked concerns</div>
-          {verdict.ranked.map((f) => {
-            const persona = PERSONAS.find((p) => p.id === f.id.split("-")[0]);
-            const seat = persona?.seat ?? "a";
-            return (
-              <article
-                key={f.id}
-                className={`finding-row ${selected === f.id ? "finding-selected" : ""}`}
-                style={{ ["--seat" as string]: `var(--seat-${seat})` }}
-              >
-                <div className="finding-rank j-serif">{String(f.rank).padStart(2, "0")}</div>
-                <div className="finding-body">
-                  <div className="finding-head">
-                    <SevBadge sev={f.sev} />
-                    <span className="j-mono j-sc j-dim">surfaced by</span>
-                    <button
-                      className="finding-agent-id j-mono"
-                      onClick={() => onSelect(selected === f.id ? null : f.id)}
-                      aria-pressed={selected === f.id}
-                    >
-                      {f.id}
-                    </button>
-                    <span className="j-mono j-tiny j-dim">· {f.section}</span>
-                    {f.cites.length > 0 && (
-                      <span className="j-mono j-tiny j-dim">· cites: {f.cites.join(", ")}</span>
-                    )}
+          {composing ? (
+            <div className="verdict-composing-panel">
+              <div className="shim verdict-pdf-skeleton" />
+              <div className="verdict-composing-caption j-mono j-dim">
+                writing the review panel's report…
+              </div>
+              <div className="verdict-composing-log j-mono">
+                {recentTraces.length === 0 && (
+                  <div className="j-dim j-tiny">
+                    {phase === "verdict"
+                      ? "spinning up prose composer…"
+                      : "reviewers still deliberating…"}
                   </div>
-                  <div className="finding-title j-serif">{f.title}</div>
-                  <div className="finding-text j-serif">{f.text}</div>
+                )}
+                {recentTraces.map((t, i) => (
+                  <div key={i} className="verdict-composing-line">
+                    <span className="j-dim">›</span> {t.text}
+                    {i === recentTraces.length - 1 && <span className="j-caret" />}
+                  </div>
+                ))}
+              </div>
+              {lastTrace && (
+                <div className="verdict-composing-progress-label j-mono j-sc j-dim">
+                  {verdictTraces.length} trace line{verdictTraces.length === 1 ? "" : "s"} so far
                 </div>
-              </article>
-            );
-          })}
+              )}
+            </div>
+          ) : (
+            <iframe
+              title="verdict PDF"
+              src={`/api/sessions/${sessionId}/verdict.pdf#view=FitH&navpanes=0&toolbar=1`}
+              className="verdict-pdf-frame"
+            />
+          )}
+          <div className="verdict-left-foot">
+            {!composing && (
+              <a
+                className="btn-ghost j-mono j-sc"
+                href={`/api/sessions/${sessionId}/verdict.pdf`}
+                download={`quorum-verdict-${sessionId}.pdf`}
+              >
+                ↓ download pdf
+              </a>
+            )}
+          </div>
         </section>
 
         <aside className="verdict-right">
-          {exp && (
-            <div className="minexp-card">
-              <div className="j-mono j-sc j-dim">minimum experiment</div>
-              <div className="minexp-title j-serif">{exp.title}</div>
-              <hr className="j-rule-d" />
-              <div className="j-mono j-tiny j-dim">resolves</div>
-              <div className="minexp-resolves">
-                {exp.resolves.map((r) => (
-                  <span key={r} className="pill minexp-pill j-mono">{r}</span>
-                ))}
-              </div>
-              <div className="j-mono j-tiny j-dim minexp-cost-label">estimated cost</div>
-              <div className="minexp-cost j-mono">
-                {exp.cost.gpu_hours} {exp.cost.gpu_type}-hours · {exp.cost.eval_sweeps} eval sweeps
-              </div>
-              <button
-                className="btn btn-primary j-mono j-sc minexp-copy"
-                onClick={() => onCopyYaml(exp.yaml)}
-              >
-                copy as experiment.yaml
-              </button>
-              <details className="minexp-yaml-details">
-                <summary className="j-mono j-tiny j-dim">preview yaml</summary>
-                <pre className="minexp-yaml-preview j-mono">{exp.yaml}</pre>
-              </details>
-            </div>
+          {composing ? (
+            <>
+              <div className="verdict-right-placeholder shim" />
+              <div className="verdict-right-placeholder shim" style={{ minHeight: 240 }} />
+            </>
+          ) : (
+            <>
+              <ClaudeCodePackage
+                markdown={markdown}
+                ranked={verdict!.ranked}
+                selected={selected}
+                onSelect={onSelect}
+                recommendedExperiment={verdict!.recommendedExperiment}
+              />
+              <ChatCard
+                sessionId={sessionId}
+                committedAgentIds={committedAgentIds}
+              />
+            </>
           )}
-          <div className="consensus">
-            <div className="j-mono j-sc j-dim">consensus</div>
-            <div className="consensus-text j-serif">
-              {verdict.ranked.filter((f) => f.sev !== "note").length} of {verdict.ranked.length}{" "}
-              reviewers find material concerns. Steelman proposes a minimal rewrite.
-            </div>
-          </div>
         </aside>
       </div>
     </div>
   );
+}
+
+function buildClaudeCodeMarkdown(paper: Paper | null, verdict: Verdict): string {
+  const title = paper?.title || "(untitled paper)";
+  const paperId = paper?.id ? `arXiv:${paper.id}` : "uploaded PDF";
+  const ranked = verdict.ranked.slice(0, 5);
+  const exp = verdict.recommendedExperiment;
+
+  const concerns = ranked
+    .map((f) => {
+      const agent = f.id.split("-")[0];
+      const sev = f.sev.toUpperCase();
+      const citesLine = f.cites.length ? `> Cites: ${f.cites.join(", ")}` : "";
+      return [
+        `### ${String(f.rank).padStart(2, "0")}. [${sev}] ${f.title}`,
+        ``,
+        `_Surfaced by ${agent} · ${f.section}_`,
+        citesLine,
+        ``,
+        f.text,
+      ]
+        .filter((l) => l !== "")
+        .join("\n");
+    })
+    .join("\n\n");
+
+  const expBlock = exp
+    ? [
+        `## Recommended next experiment`,
+        ``,
+        `**${exp.title}**`,
+        ``,
+        exp.prose,
+        exp.resolves.length
+          ? `\n_Resolves: ${exp.resolves.join(", ")}_`
+          : "",
+      ]
+        .filter((l) => l !== "")
+        .join("\n")
+    : "";
+
+  return [
+    `# Revisions for ${title}`,
+    ``,
+    `> Source: ${paperId}`,
+    `> Reviewed by the Quorum adversarial panel. ${ranked.length} concern(s) surfaced.`,
+    ``,
+    `## Top concerns`,
+    ``,
+    concerns,
+    ``,
+    expBlock,
+    ``,
+    `---`,
+    ``,
+    `**Please address each concern above in order of rank. Cite the specific section / figure / equation each change targets. Consider running the recommended next experiment to resolve the highest-priority concerns.**`,
+    ``,
+  ].join("\n");
 }

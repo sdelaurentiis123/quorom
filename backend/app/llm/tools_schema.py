@@ -9,7 +9,7 @@ Rules:
 """
 from __future__ import annotations
 
-from ..types import PERSONA_IDS
+from ..types import ORCHESTRATOR_POOL, PERSONA_IDS
 
 _SEV = ["high", "med", "low", "note"]
 
@@ -119,8 +119,8 @@ TOOL_SCHEMAS: list[dict] = [
             "properties": {
                 "id":      {"type": "string", "enum": list(PERSONA_IDS), "description": "Your persona ID; must match the one given to you."},
                 "sev":     {"type": "string", "enum": _SEV},
-                "title":   {"type": "string", "description": "one-line italic headline"},
-                "text":    {"type": "string", "description": "2-3 sentence finding body"},
+                "title":   {"type": "string", "maxLength": 140, "description": "one-line italic headline"},
+                "text":    {"type": "string", "maxLength": 800, "description": "2-4 sentence finding body. Max ~800 chars. No preamble."},
                 "section": {"type": "string", "description": "paper section ref, e.g. §4.2"},
                 "cites":   {"type": "array", "items": {"type": "string"}, "default": []},
             },
@@ -133,12 +133,23 @@ TOOL_SCHEMAS: list[dict] = [
 ORCHESTRATOR_TOOLS: list[dict] = [
     {
         "name": "emit_vector",
-        "description": "Emit one identified attack vector. Call once per reviewer you want to convene.",
+        "description": (
+            "Emit one identified attack vector. Call once per reviewer you want to convene. "
+            "Include the section IDs most relevant to this attack so the reviewer only reads the "
+            "parts of the paper that matter — this is important for rate-limit + focus."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "agent_id": {"type": "string", "enum": list(PERSONA_IDS)},
-                "angle":    {"type": "string", "description": "one-sentence concrete claim under attack"},
+                "agent_id": {"type": "string", "enum": list(ORCHESTRATOR_POOL),
+                             "description": "Pick a seat from the non-STLM pool. STLM is appended automatically."},
+                "angle":    {"type": "string", "description": "one-sentence concrete claim under attack, anchored to a section reference"},
+                "relevant_sections": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Section IDs (e.g. ['§4', '§4.2', '§5']) the reviewer must read. 1-3 sections.",
+                    "default": [],
+                },
             },
             "required": ["agent_id", "angle"],
         },
@@ -164,51 +175,43 @@ SENIOR_TOOLS: list[dict] = [
     },
 ]
 
-# Verdict: one tool to emit the final structured verdict.
-VERDICT_TOOLS: list[dict] = [
+# Report composer: one tool that takes the final prose + structured ranking.
+REPORT_TOOLS: list[dict] = [
     {
-        "name": "emit_verdict",
-        "description": "Emit the final ranked verdict + minimum experiment. Call exactly once.",
+        "name": "emit_report",
+        "description": (
+            "Emit the final panel verdict report. Call exactly once after you have "
+            "composed the complete Markdown document. Your turn ends after this call."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "ranked": {
-                    "type": "array",
-                    "description": "Findings in rank order (1 = most critical).",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string"},
-                            "sev": {"type": "string", "enum": _SEV},
-                            "rank": {"type": "integer"},
-                            "title": {"type": "string"},
-                            "text": {"type": "string"},
-                            "section": {"type": "string"},
-                            "cites": {"type": "array", "items": {"type": "string"}},
-                        },
-                        "required": ["id", "sev", "rank", "title", "text", "section"],
-                    },
+                "markdown": {
+                    "type": "string",
+                    "description": "The full Markdown review report you composed. "
+                                   "Must include all required section headings.",
                 },
-                "min_experiment": {
+                "ranked_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Finding IDs in rank order (1 = most critical). Must match the "
+                                   "order the findings appear in your 'Principal Concerns' section.",
+                },
+                "recommended_experiment": {
                     "type": "object",
                     "properties": {
-                        "title": {"type": "string"},
+                        "title": {"type": "string", "maxLength": 160},
+                        "prose": {"type": "string", "maxLength": 1200,
+                                  "description": "2-4 sentence prose description of the experiment. No YAML."},
                         "resolves": {"type": "array", "items": {"type": "string"}},
-                        "cost": {
-                            "type": "object",
-                            "properties": {
-                                "gpu_hours": {"type": "number"},
-                                "gpu_type": {"type": "string"},
-                                "eval_sweeps": {"type": "integer"},
-                            },
-                            "required": ["gpu_hours", "gpu_type", "eval_sweeps"],
-                        },
-                        "yaml": {"type": "string", "description": "ready-to-copy experiment config"},
                     },
-                    "required": ["title", "resolves", "cost", "yaml"],
+                    "required": ["title", "prose", "resolves"],
                 },
             },
-            "required": ["ranked", "min_experiment"],
+            "required": ["markdown", "ranked_ids", "recommended_experiment"],
         },
     },
 ]
+
+# Kept as alias so old imports keep working during the refactor.
+VERDICT_TOOLS = REPORT_TOOLS

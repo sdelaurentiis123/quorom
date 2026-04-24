@@ -1,0 +1,111 @@
+.cc-card {
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.cc-card-head {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 8px;
+}
+.cc-card-label { font-size: 10px; }
+.cc-card-title { font-size: 17px; font-style: italic; margin-top: 2px; line-height: 1.2; }
+
+.cc-card-body { display: flex; flex-direction: column; gap: 10px; }
+.cc-card-blurb { font-size: 13px; margin: 0; color: var(--ink-2); line-height: 1.45; }
+
+.cc-card-actions { display: flex; gap: 6px; align-items: stretch; }
+.cc-copy { flex: 1; padding: 10px 14px; }
+.cc-copy.is-copied {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.cc-download { padding: 10px 12px; }
+
+.cc-toggle {
+  align-self: flex-start;
+  padding: 2px 4px;
+  margin-top: -2px;
+  border: none;
+  background: transparent;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 10px;
+}
+.cc-toggle:hover { color: var(--ink); }
+
+.cc-preview {
+  max-height: 240px;
+  overflow: auto;
+  font-size: 10px;
+  line-height: 1.5;
+  padding: 10px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--ink-2);
+}
+
+.cc-agents {
+  border-top: 1px dashed var(--rule);
+  padding-top: 8px;
+}
+.cc-agents-head {
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 0;
+}
+.cc-agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-3) transparent;
+}
+.cc-finding {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--seat, var(--ink));
+  padding: 8px 10px;
+  transition: background 160ms;
+}
+.cc-finding.is-selected { background: var(--paper-2); }
+.cc-finding-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.cc-finding-rank {
+  font-size: 15px;
+  font-style: italic;
+  color: var(--ink-2);
+  min-width: 20px;
+}
+.cc-finding-id {
+  font-size: 10px;
+  color: var(--ink);
+  text-decoration: underline;
+  padding: 0;
+  cursor: pointer;
+}
+.cc-finding-title { font-size: 12px; font-style: italic; }
+.cc-finding-text { font-size: 11px; margin-top: 3px; line-height: 1.45; color: var(--ink-2); }
+
+.cc-next-exp {
+  border: 1px solid var(--rule);
+  padding: 10px 12px;
+  background: var(--paper-2);
+  margin-top: 6px;
+}
+.cc-next-exp-head { font-size: 10px; margin-bottom: 2px; }
+.cc-next-exp-title { font-size: 14px; font-style: italic; line-height: 1.3; }
+.cc-next-exp-prose { font-size: 12.5px; line-height: 1.55; margin: 6px 0 6px; }

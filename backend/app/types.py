@@ -10,10 +10,14 @@ Phase = Literal["idle", "intake", "reading", "deliberation", "converging", "verd
 TraceKind = Literal["read", "tool", "think", "flag", "commit"]
 Sev = Literal["high", "med", "low", "note"]
 Seat = Literal["a", "b", "c", "d", "e", "f"]
-PersonaId = Literal["METH", "STAT", "THRY", "EMPR", "HIST", "STLM"]
+PersonaId = Literal["METH", "STAT", "THRY", "EMPR", "STLM"]
 SeniorId = Literal["CHAIR", "SKEPTIC", "METHOD"]
 
-PERSONA_IDS: tuple[str, ...] = ("METH", "STAT", "THRY", "EMPR", "HIST", "STLM")
+# Five-seat pool. The orchestrator picks exactly 3 of the non-STLM seats to
+# convene; STLM is appended automatically so the final panel size is always 4.
+PERSONA_IDS: tuple[str, ...] = ("METH", "STAT", "THRY", "EMPR", "STLM")
+ORCHESTRATOR_POOL: tuple[str, ...] = ("METH", "STAT", "THRY", "EMPR")  # non-STLM candidates
+MAX_REVIEWERS_NON_STLM = 3  # hard cap; STLM always appended = 4 total
 SENIOR_IDS: tuple[str, ...] = ("CHAIR", "SKEPTIC", "METHOD")
 
 
@@ -75,7 +79,6 @@ PERSONAS: list[Persona] = [
     {"id": "STAT", "seat": "b", "name": "The Statistician", "angle": "Power, significance, confidence intervals."},
     {"id": "THRY", "seat": "c", "name": "The Theorist", "angle": "Mechanism, priors, first-principles."},
     {"id": "EMPR", "seat": "d", "name": "The Empiricist", "angle": "Replication, adjacent evidence, prior art."},
-    {"id": "HIST", "seat": "e", "name": "The Historian", "angle": "Lineage of claims, precedent, negative results."},
     {"id": "STLM", "seat": "f", "name": "The Steelman", "angle": "Strongest version of the paper's argument."},
 ]
 

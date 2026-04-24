@@ -1,5 +1,8 @@
 /* Journal design tokens — ported from design_handoff_quorum/journal/j-app.jsx */
 :root {
+  /* Layout */
+  --page-pad: 28px;
+
   /* Colors */
   --paper:   #F5EFE4;
   --paper-2: #EEE6D6;

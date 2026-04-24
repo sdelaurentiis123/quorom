@@ -31,10 +31,10 @@ MODEL_SENIOR = "claude-opus-4-7"
 MODEL_VERDICT = "claude-opus-4-7"
 MODEL_SECTIONIZE_FALLBACK = "claude-haiku-4-5"
 
-# Parallelism cap — if we do hit Opus ITPM, a semaphore gates the reviewer
-# fan-out. 3 means two batches of 3 on a 5-reviewer run; the cache keeps
-# batch 2 cheap. Set via env QUORUM_REVIEWER_PARALLEL.
-REVIEWER_PARALLEL = int(os.environ.get("QUORUM_REVIEWER_PARALLEL", "3"))
+# Parallelism cap. Tier 2 Opus: 1,000 RPM / 450k ITPM / 90k OTPM. 5 parallel
+# reviewers fit comfortably — this is the actual "swarm" moment. Drop via
+# QUORUM_REVIEWER_PARALLEL if the tier changes.
+REVIEWER_PARALLEL = int(os.environ.get("QUORUM_REVIEWER_PARALLEL", "5"))
 
 # Caps
 REVIEWER_MAX_TURNS = 10

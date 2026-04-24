@@ -10,6 +10,8 @@ const ICON: Record<string, string> = {
   read: "›",
 };
 
+import { useEffect, useRef } from "react";
+
 export function AgentCard({
   persona,
   slice,
@@ -20,7 +22,13 @@ export function AgentCard({
   onSelect?: (id: string) => void;
 }) {
   const s = slice ?? { state: "queued" as const, traces: [], progress: 0, finding: null };
-  const last3 = s.traces.slice(-3);
+  const logRef = useRef<HTMLDivElement>(null);
+  const traceCount = s.traces.length;
+  // Autoscroll as new traces stream in.
+  useEffect(() => {
+    if (!logRef.current) return;
+    logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [traceCount, s.state]);
 
   return (
     <article
@@ -42,12 +50,12 @@ export function AgentCard({
 
       <div className="agent-angle j-serif j-dim">{persona.angle}</div>
 
-      <div className="agent-log" role="log" aria-live="polite">
-        {last3.length === 0 && s.state === "queued" && (
+      <div className="agent-log" role="log" aria-live="polite" ref={logRef}>
+        {s.traces.length === 0 && s.state === "queued" && (
           <div className="log-queued j-mono j-dim j-tiny">queued…</div>
         )}
-        {last3.map((t, i) => {
-          const isLast = i === last3.length - 1;
+        {s.traces.map((t, i) => {
+          const isLast = i === s.traces.length - 1;
           return (
             <div
               key={`${t.t}-${i}`}

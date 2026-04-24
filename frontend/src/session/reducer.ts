@@ -112,9 +112,14 @@ export function reduce(state: SessionState, action: Action): SessionState {
   switch (ev.type) {
     case "phase.change": {
       const logLine = phaseLogLine(ev.phase);
+      // Auto-flip to verdict tab the moment the panel enters the verdict phase.
+      // We want the composing state visible immediately — not stuck on the trace
+      // view while the report generates in the background.
+      const activeTab = ev.phase === "verdict" ? "verdict" : state.activeTab;
       return withSeq({
         ...state,
         phase: ev.phase,
+        activeTab,
         intakeLog: logLine ? [...state.intakeLog, logLine] : state.intakeLog,
       });
     }
@@ -165,7 +170,11 @@ export function reduce(state: SessionState, action: Action): SessionState {
     case "verdict.ready": {
       return withSeq({
         ...state,
-        verdict: { ranked: ev.ranked, minExperiment: ev.min_experiment },
+        verdict: {
+          ranked: ev.ranked,
+          recommendedExperiment: ev.recommended_experiment ?? null,
+          reportMarkdown: ev.report_markdown ?? "",
+        },
         activeTab: "verdict",
       });
     }

@@ -32,6 +32,7 @@ class FakeBlock:
 class FakeDelta:
     type: str
     text: str = ""
+    partial_json: str = ""
 
 
 @dataclass
@@ -39,6 +40,7 @@ class FakeEvent:
     type: str
     content_block: Any = None
     delta: Any = None
+    index: int = 0
 
 
 @dataclass
@@ -127,9 +129,13 @@ async def test_tool_use_dispatches_and_continues():
         dispatched.append((n, i))
         return {"ok": True, "hits": 3}
 
-    # Turn 1: model calls arxiv_search, stop_reason=tool_use
+    # Turn 1: model calls arxiv_search, stop_reason=tool_use.
+    # Tool args stream in via input_json_delta; we emit the tool trace at
+    # content_block_stop now (R4), so the simulated events must include them.
     turn1_events = [
-        FakeEvent(type="content_block_start", content_block=FakeBlock(type="tool_use", name="arxiv_search", id="tu1")),
+        FakeEvent(type="content_block_start", index=0, content_block=FakeBlock(type="tool_use", name="arxiv_search", id="tu1")),
+        FakeEvent(type="content_block_delta", index=0, delta=FakeDelta(type="input_json_delta", partial_json='{"query":"foo"}')),
+        FakeEvent(type="content_block_stop", index=0),
     ]
     turn1_final = FakeMessage(stop_reason="tool_use", content=[
         FakeBlock(type="tool_use", name="arxiv_search", id="tu1", input={"query": "foo"}),
