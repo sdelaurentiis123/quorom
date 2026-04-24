@@ -2,15 +2,17 @@
 
 Adversarial peer review for research papers. Drop in a paper (arXiv URL or PDF upload); an orchestrator LLM identifies the weakest surfaces of the argument; a panel of specialist reviewer agents works in parallel against those surfaces, each writing and executing Python in an isolated sandbox to verify or falsify numerical claims; three senior reviewers reconcile the findings; a final composer produces a multi-page referee report that renders as a PDF with an accompanying "revisions prompt" ready to paste into Claude Code.
 
-Localhost-only. Single-user. Built in front of an interview panel, so the architecture favors clarity over production polish.
+Localhost-only, single-user.
 
 ---
 
 ## Why
 
-Peer review today is slow, inconsistent, and gated by the availability of specific experts. The ambition behind Quorum is not to replace that process — it's to show what an adversarial, tool-using panel of LLM reviewers can actually do when you take their critique seriously: run code, cross-reference prior art, point at the exact section and figure, commit a structured finding, and defend it in follow-up chat. The result isn't a grade. It's a rigorous document an author could use to improve the paper before submission, written in the voice of a real referee panel.
+Peer review is slow, inconsistent, and gated by the availability of specific experts. Most LLM-assisted review tools today produce vague, sycophantic summaries that authors ignore because the critique isn't anchored to anything specific.
 
-Frontier labs already use versions of this shape internally as a first-pass filter on internal drafts. Quorum is a public, readable reference implementation of that shape — honest about what works, what's hard, and what's still out of scope.
+Quorum tries to fix that in a specific way: by treating each reviewer as an agent that has to **verify its claims with code**. A statistician can't just say "the sample size seems low" — it has to run a real power analysis in a sandbox, compute the required `n`, and commit a structured finding that cites the exact section and figure. A theorist can't just say "the derivation seems off" — it has to simplify the expression symbolically and show what breaks. The panel then reconciles, and the verdict is a real multi-page referee report, not a bullet list.
+
+The result isn't a grade. It's a document an author could actually use to improve the paper before submission, written in the voice of a referee panel and grounded in reproducible checks.
 
 ---
 
@@ -291,7 +293,7 @@ Open http://localhost:5173. Click "try the demo paper" or paste `arxiv.org/abs/�
 - Python 3.11 (the backend venv; pyenv works: `pyenv install 3.11`)
 - Node 20+ and pnpm 9+
 - Docker or Colima (for the sandbox)
-- An Anthropic API key on Tier 2+ for parallel Opus (Tier 1 works but will stall on rate limits)
+- An Anthropic API key. Tier 2+ is recommended for parallel Opus; Tier 1 works but will stall on rate limits (see "Rate-limit and cost math" above)
 
 ### Tests
 
@@ -299,7 +301,7 @@ Open http://localhost:5173. Click "try the demo paper" or paste `arxiv.org/abs/�
 make test           # runs pytest + vitest
 ```
 
-30 backend + 20 frontend. One test is network-gated (`QUORUM_SKIP_NETWORK=1` to skip it in CI-like runs).
+30 backend (pytest) + 20 frontend (vitest). One backend test hits real arxiv.org and is network-gated — set `QUORUM_SKIP_NETWORK=1` to skip it in flaky environments.
 
 ---
 
@@ -307,7 +309,7 @@ make test           # runs pytest + vitest
 
 **Opus everywhere.** Orchestrator, reviewers, seniors, verdict composer, chat — all Claude Opus 4.7. Cheaper mixes (Sonnet/Haiku for subagents) were tried during development; the loss in reviewer analytic quality wasn't worth the rate-limit savings once Tier 2 was available. Sectionize fallback uses Haiku because it's a trivial one-shot call.
 
-**In-process state only.** No database, no Redis, no Supabase. `SessionStore` is a Python dict in the uvicorn process; each `Session` holds the paper bytes, findings, chat threads, and SSE backlog in memory. A server restart wipes everything. This was an explicit scope decision for the interview build. The obvious productionization path is Postgres for session metadata + Supabase Storage (or S3) for paper and verdict PDFs. Mentioned because reviewers will ask.
+**In-process state only.** No database, no Redis, no Supabase. `SessionStore` is a Python dict in the uvicorn process; each `Session` holds the paper bytes, findings, chat threads, and SSE backlog in memory. A server restart wipes everything. This is an explicit scope decision for the localhost build — the productionization path is Postgres for session metadata and object storage (Supabase Storage / S3 / R2) for paper and verdict PDFs, but none of it was needed to make the system legible end-to-end.
 
 **SSE, not WebSockets.** Uni-directional server → client is exactly the shape we need; the bus is naturally append-only with sequence numbers. Reconnect carries `?since_seq=N` and the server replays from a bounded deque, so a tab refresh doesn't lose state mid-session. `_overflow` is a control event the server emits when a subscriber queue fills; the client treats it as a resync trigger.
 
@@ -335,7 +337,7 @@ make test           # runs pytest + vitest
 - CI/CD
 - Multi-tenant rate-limit pool across a team's Anthropic keys
 
-These are real roadmap items, not oversights. The interview build stops at "one user, one laptop, one session at a time, and everything works end-to-end on a real paper."
+These are real roadmap items, not oversights. The current shape stops at "one user, one laptop, one session at a time, and everything works end-to-end on a real paper." Everything downstream of that is a scoping question, not an engineering one.
 
 ---
 
@@ -371,6 +373,16 @@ make dev
 Backend is running on :8000, frontend on :5173; Vite proxies `/api/*` to the backend for you.
 
 ---
+
+## Repo layout philosophy
+
+Three things kept coming up while building this and they shaped a lot of the structure:
+
+1. **The phase machine is the product.** Every interesting failure mode (rate limits, stale sessions, composer falling back, reviewer not running code) shows up as a phase that stalls, regresses, or lies. So the phase transitions are first-class and observable: one SSE event type per transition, every phase helper lives in one file (`session_runner.py`) with ASCII banner comments, and the UI ribbon is driven directly off `phase.change` events.
+
+2. **Streaming is load-bearing, not decoration.** The user's mental model ("watch six agents work") only works if tool calls, think lines, and code snippets arrive as they happen. That means the server side has to emit fine-grained events (per tool call, per newline of text-delta) and the UI side has to render them in a way that doesn't break under rapid updates (sticky-bottom autoscroll, idempotent seq-gated reducer, bounded reconnect). Most of the trace polish is in service of this.
+
+3. **Trust but verify the LLM.** Every place an agent could lie or misbehave has a guardrail. `commit_finding.id` is Literal-constrained so an agent can't commit under someone else's name. `commit_senior_review` actually has to fire before `senior.signed` goes out. The orchestrator's `emit_vector` is hard-capped at 3 non-STLM seats even if the model tries more. Reviewer prompts mandate a `sandbox_run` call before committing, and the sandbox is Docker-isolated with no network. If a reviewer lies about the numbers, the sandbox receipt is in the trace for anyone to read back.
 
 ## License
 
