@@ -6,6 +6,12 @@ Localhost-only, single-user.
 
 ---
 
+## Demo
+
+Video walkthrough: https://www.loom.com/share/2452982e96904bc9be9df7c7da248178
+
+---
+
 ## Why
 
 Peer review is slow, inconsistent, and gated by the availability of specific experts. Most LLM-assisted review tools today produce vague, sycophantic summaries that authors ignore because the critique isn't anchored to anything specific.
