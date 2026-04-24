@@ -151,8 +151,15 @@ function buildClaudeCodeMarkdown(paper: Paper | null, verdict: Verdict): string 
   const concerns = ranked
     .map((f) => {
       const agent = f.id.split("-")[0];
-      const sev = f.sev.toUpperCase();
-      const citesLine = f.cites.length ? `> Cites: ${f.cites.join(", ")}` : "";
+      const sev = (f.sev || "note").toUpperCase();
+      // Defensive: reviewers sometimes return cites as a string, null, or omit
+      // it entirely. Normalize to an array of strings before we touch it.
+      const citesArr = Array.isArray(f.cites)
+        ? f.cites
+        : typeof f.cites === "string" && f.cites
+        ? [f.cites as unknown as string]
+        : [];
+      const citesLine = citesArr.length ? `> Cites: ${citesArr.join(", ")}` : "";
       return [
         `### ${String(f.rank).padStart(2, "0")}. [${sev}] ${f.title}`,
         ``,
@@ -173,7 +180,7 @@ function buildClaudeCodeMarkdown(paper: Paper | null, verdict: Verdict): string 
         `**${exp.title}**`,
         ``,
         exp.prose,
-        exp.resolves.length
+        Array.isArray(exp.resolves) && exp.resolves.length
           ? `\n_Resolves: ${exp.resolves.join(", ")}_`
           : "",
       ]

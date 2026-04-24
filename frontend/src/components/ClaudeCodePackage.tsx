@@ -85,11 +85,12 @@ export function ClaudeCodePackage({
               {recommendedExperiment.title}
             </div>
             <p className="j-serif cc-next-exp-prose">{recommendedExperiment.prose}</p>
-            {recommendedExperiment.resolves.length > 0 && (
-              <div className="j-mono j-tiny j-dim">
-                resolves {recommendedExperiment.resolves.join(", ")}
-              </div>
-            )}
+            {Array.isArray(recommendedExperiment.resolves) &&
+              recommendedExperiment.resolves.length > 0 && (
+                <div className="j-mono j-tiny j-dim">
+                  resolves {recommendedExperiment.resolves.join(", ")}
+                </div>
+              )}
           </div>
         )}
 

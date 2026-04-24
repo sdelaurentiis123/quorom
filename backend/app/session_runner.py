@@ -324,11 +324,19 @@ async def _deliberation(paper: dict, body_text: str, vectors: list[dict], bus: S
 
             if finding is None:
                 finding = _placeholder_finding(pid, "timeout", "Reviewer exhausted turns without committing.")
-            finding.setdefault("cites", [])
+            # Normalize the finding shape before it hits the wire. The tool
+            # schema says cites is an array of strings but the model sometimes
+            # returns a string, null, or omits it — we coerce to list[str]
+            # so the frontend never has to defend against it.
+            finding["cites"] = _as_str_list(finding.get("cites"))
             finding["id"] = finding.get("id") or f"{pid}-1"
             if not finding["id"].startswith(pid + "-"):
                 finding["id"] = f"{pid}-1"
             finding.setdefault("rank", 0)
+            finding.setdefault("title", "(no title)")
+            finding.setdefault("text", "")
+            finding.setdefault("section", "—")
+            finding.setdefault("sev", "note")
 
             bus.publish({"type": "agent.finding", "agent_id": pid, "finding": finding})
             return finding
@@ -482,6 +490,12 @@ async def _verdict(paper: dict, findings: list[dict], senior_notes: dict[str, di
             rec = inp.get("recommended_experiment") or {}
             if "title" not in rec or "prose" not in rec:
                 rec = _fallback_recommended_experiment(findings)
+            else:
+                rec = {
+                    "title": str(rec.get("title") or "(no title)"),
+                    "prose": str(rec.get("prose") or ""),
+                    "resolves": _as_str_list(rec.get("resolves")),
+                }
 
             collected["report_markdown"] = md
             collected["ranked"] = ranked
@@ -520,6 +534,17 @@ async def _verdict(paper: dict, findings: list[dict], senior_notes: dict[str, di
 async def _maybe_await(v):
     if hasattr(v, "__await__"):
         await v
+
+
+def _as_str_list(v) -> list[str]:
+    """Coerce a value into list[str]. Accepts list, tuple, string, None."""
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [v] if v.strip() else []
+    if isinstance(v, (list, tuple)):
+        return [str(x) for x in v if x is not None and str(x).strip()]
+    return [str(v)]
 
 
 def _fallback_recommended_experiment(findings: list[dict]) -> dict:
